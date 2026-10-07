@@ -34,18 +34,25 @@ export function SettingsDialog({ visible, onHide }: { visible: boolean; onHide: 
     const [remove] = RemoveAIProvider.use();
     const [kind, setKind] = useState<'openai-compatible' | 'anthropic'>('openai-compatible');
     const [busy, setBusy] = useState(false);
+    const [addError, setAddError] = useState<string>('');
 
     const sorted = [...providers.data].sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
 
     const add = async () => {
         setBusy(true);
         try {
-            if (kind === 'openai-compatible') {
-                const result = await addOpenAI.execute();
-                if (result.isSuccess) { clearOpenAI(); }
+            setAddError('');
+            const result = kind === 'openai-compatible'
+                ? await addOpenAI.execute()
+                : await addAnthropic.execute();
+            if (result.isSuccess) {
+                if (kind === 'openai-compatible') clearOpenAI(); else clearAnthropic();
             } else {
-                const result = await addAnthropic.execute();
-                if (result.isSuccess) { clearAnthropic(); }
+                const problems = [
+                    ...result.validationResults.map((v) => v.message),
+                    ...result.exceptionMessages,
+                ].filter((m) => !!m);
+                setAddError(problems.length > 0 ? problems.join('; ') : 'The provider was not added.');
             }
         } finally {
             setBusy(false);

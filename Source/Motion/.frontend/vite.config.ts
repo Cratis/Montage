@@ -27,6 +27,12 @@ export default defineConfig({
         open: false,
         proxy: {
             '/api': { target: 'http://localhost:5000', ws: true },
+
+            // Arc's observable queries stream over a websocket hub (and SSE fallback) under
+            // /.cratis - without this every live list in the editor (shows, jobs, providers)
+            // connects to vite itself, gets the SPA fallback instead of a socket, and stays
+            // empty forever no matter what the backend holds.
+            '/.cratis': { target: 'http://localhost:5000', ws: true },
             '/packages': { target: 'http://localhost:5000' },
             '/renders': { target: 'http://localhost:5000' },
             '/preview': { target: 'http://localhost:5000' },
