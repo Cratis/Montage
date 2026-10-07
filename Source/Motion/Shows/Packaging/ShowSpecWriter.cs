@@ -46,10 +46,15 @@ public static class ShowSpecWriter
         using var doc = JsonDocument.Parse(lyricsJson);
         foreach (var line in doc.RootElement.GetProperty("lines").EnumerateArray())
         {
-            var sceneId =
-                line.TryGetProperty("scene_id", out var s1) ? s1.GetString() ?? string.Empty :
-                line.TryGetProperty("sceneId", out var s2) ? s2.GetString() ?? string.Empty :
-                string.Empty;
+            string sceneId;
+            if (line.TryGetProperty("scene_id", out var sceneIdEl))
+            {
+                sceneId = sceneIdEl.GetString() ?? string.Empty;
+            }
+            else
+            {
+                sceneId = line.TryGetProperty("sceneId", out var sceneIdAlt) ? sceneIdAlt.GetString() ?? string.Empty : string.Empty;
+            }
             var start = line.GetProperty("start").GetDouble();
             var end = line.GetProperty("end").GetDouble();
             if (!linesByScene.TryGetValue(sceneId, out var list))
@@ -66,10 +71,7 @@ public static class ShowSpecWriter
         {
             var scene = plan.Scenes[i];
             var isLast = i == plan.Scenes.Count - 1;
-            if (linesByScene.TryGetValue(scene.Type + ":" + i, out _) || linesByScene.TryGetValue(i.ToString(), out _))
-            {
-                // (scene ids in lyrics are positional: "scene-{n}")
-            }
+
             // lyrics carry the positional scene id "scene-{index}"
             var key = $"scene-{i + 1}";
             double start, end;
@@ -117,8 +119,8 @@ public static class ShowSpecWriter
             {
                 Id = $"scene-{i + 1}",
                 Type = planned.Type,
-                Start = Math.Round(window.Start, 3),
-                End = Math.Round(window.End, 3),
+                Start = Math.Round(window.Start, 3, MidpointRounding.AwayFromZero),
+                End = Math.Round(window.End, 3, MidpointRounding.AwayFromZero),
                 TransitionIn = transition,
                 TransitionDuration = 0.55,
                 Caption = CaptionFor(planned, i),
@@ -131,7 +133,7 @@ public static class ShowSpecWriter
             Id = showId.ToString(),
             Title = plan.Title,
             Voiceover = audioDuration > 0 ? "audio/voiceover.mp3" : null,
-            Duration = audioDuration > 0 ? Math.Round(audioDuration, 3) : null,
+            Duration = audioDuration > 0 ? Math.Round(audioDuration, 3, MidpointRounding.AwayFromZero) : null,
             Brand = brand ?? new BrandOverlay { Name = "Cratis", Product = "Motion", MarkUrl = "/fonts/cratis-mark.svg" },
             Scenes = scenes,
         };
@@ -146,7 +148,7 @@ public static class ShowSpecWriter
 
     static ShowSpecDocument.CaptionDocument? CaptionFor(PlannedScene scene, int index)
     {
-        if (scene.Type is "title" or "endcard") return null;
+        if (scene.Type == "title" || scene.Type == "endcard") return null;
         var text =
             GetString(scene.Params, "headline") ??
             GetString(scene.Params, "title") ??
@@ -159,7 +161,7 @@ public static class ShowSpecWriter
         };
     }
 
-    static string? GetString(Dictionary<string, JsonElement> parameters, string name) =>
+    static string? GetString(IReadOnlyDictionary<string, JsonElement> parameters, string name) =>
         parameters.TryGetValue(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
 
     static string Truncate(string s, int max) => s.Length <= max ? s : s[..(max - 1)].TrimEnd() + "\u2026";
@@ -257,7 +259,7 @@ public sealed record ShowSpecDocument
         /// Gets the visual parameters.
         /// </summary>
         [JsonPropertyName("params")]
-        public Dictionary<string, JsonElement> Params { get; init; } = new();
+        public IReadOnlyDictionary<string, JsonElement> Params { get; init; } = new Dictionary<string, JsonElement>();
     }
 
     /// <summary>

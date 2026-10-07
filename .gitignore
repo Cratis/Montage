@@ -13,3 +13,6 @@ workspace/
 .yarn/
 yarn.lock
 package-lock.json
+appsettings.local.json
+.cratis/screenplay/
+.ai-work/

@@ -70,8 +70,7 @@ public sealed partial class EngineRenderer(
         };
 
         LogRenderStarted(logger, showId.Value, outputPath);
-        using var process = Process.Start(psi);
-        if (process is null) throw new RenderFailed("The renderer could not be started (is node on PATH?).");
+        using var process = Process.Start(psi) ?? throw new RenderFailed("The renderer could not be started (is node on PATH?).");
 
         var stdout = new System.Text.StringBuilder();
         var stderr = new System.Text.StringBuilder();

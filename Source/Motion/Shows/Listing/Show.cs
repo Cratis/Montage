@@ -4,7 +4,6 @@
 using Cratis.Arc.MongoDB;
 using Cratis.Chronicle.Projections;
 using MongoDB.Driver;
-using System.Reactive.Subjects;
 using Motion.Shows.Creation;
 using Motion.Shows.Packaging;
 using Motion.Shows.Planning;
@@ -18,7 +17,6 @@ namespace Motion.Shows.Listing;
 /// <summary>
 /// Represents a show in the listing — everything the editor needs at a glance and on the detail page.
 /// </summary>
-/// <param name="Id">The show identifier.</param>
 [ReadModel]
 public record Show(
     ShowId Id,

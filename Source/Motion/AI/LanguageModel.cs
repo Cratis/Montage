@@ -38,7 +38,6 @@ public interface ILanguageModel
 public sealed partial class LanguageModel(IOptions<MotionOptions> options, ILogger<LanguageModel> logger) : ILanguageModel
 {
     static readonly HttpClient _http = new() { Timeout = TimeSpan.FromMinutes(10) };
-    static readonly JsonSerializerOptions _json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
     /// <inheritdoc/>
     public bool IsEnabled => options.Value.Ai.IsEnabled;

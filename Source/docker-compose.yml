@@ -1,0 +1,67 @@
+# The no-Aspire path: infrastructure + self-hosted speech services only.
+# For the full experience with the dashboard, run the Aspire AppHost instead:
+#   dotnet run --project Source/Composition
+#
+#   docker compose up -d        (from this folder)
+#   cd Motion && dotnet run     (the editor, http://localhost:5000)
+
+services:
+    mongodb:
+        image: mongo:7
+        container_name: motion-mongodb
+        # Chronicle needs transactions and change streams, which a standalone mongod
+        # does not support - hence the single-node replica set, self-initiating.
+        command: ["--replSet", "rs0", "--bind_ip_all"]
+        ports:
+            - "27017:27017"
+        healthcheck:
+            test: "mongosh --quiet --eval 'db.hello().isWritablePrimary || db.hello().secondary'"
+            interval: 5s
+            timeout: 5s
+            retries: 24
+
+    mongo-init:
+        image: mongo:7
+        container_name: motion-mongo-init
+        depends_on:
+            mongodb:
+                condition: service_healthy
+        restart: "no"
+        entrypoint: >
+            mongosh mongodb://mongodb:27017 --quiet --eval '
+            try { rs.status() } catch (e) { rs.initiate({_id:"rs0", members:[{_id:0, host:"localhost:27017"}]}) }'
+
+    chronicle:
+        image: cratis/chronicle:19.33.3-development-slim
+        container_name: motion-chronicle
+        # Must match the Cratis.Chronicle client package version in Directory.Packages.props.
+        depends_on:
+            mongo-init:
+                condition: service_completed_successfully
+        ports:
+            - "35000:35000"
+        environment:
+            Cratis__Chronicle__Storage__Type: "MongoDB"
+            Cratis__Chronicle__Storage__ConnectionDetails: "mongodb://mongodb:27017/?directConnection=true"
+
+    tts:
+        # Kokoro-FastAPI - OpenAI-compatible /v1/audio/speech, model baked into the image.
+        image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.9.0
+        container_name: motion-tts
+        ports:
+            - "8880:8880"
+
+    stt:
+        # Speaches - OpenAI-compatible /v1/audio/transcriptions on faster-whisper.
+        # The model is pulled on first use and cached in the named volume.
+        image: ghcr.io/speaches-ai/speaches:0.9.0-rc.3-cpu
+        container_name: motion-stt
+        ports:
+            - "8770:8000"
+        environment:
+            WHISPER__MODEL: "Systran/faster-whisper-tiny.en"
+        volumes:
+            - motion-hf-cache:/home/ubuntu/.cache/huggingface/hub
+
+volumes:
+    motion-hf-cache:

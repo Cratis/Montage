@@ -34,7 +34,7 @@ public record CreateShow(
         return (showId, new ShowCreated(
             Title?.Trim() is { Length: > 0 } t ? t : "Untitled show",
             Description.Trim(),
-            string.IsNullOrWhiteSpace(Voice) ? "af_heart" : Voice!,
+            string.IsNullOrWhiteSpace(Voice) ? "af_heart" : Voice,
             TargetDurationSeconds is > 0 ? Math.Clamp(TargetDurationSeconds.Value, 15, 300) : 60,
             Tone?.Trim() ?? string.Empty,
             Audience?.Trim() ?? string.Empty));

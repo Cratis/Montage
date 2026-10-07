@@ -2,12 +2,12 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.Text.Json;
-using Cratis.Chronicle.EventSequences;
+
 using Cratis.Chronicle.Observation;
 using Motion.AI;
-using Motion.Speech;
 using Motion.Shows.Production;
 using Motion.Shows.Voiceover;
+using Motion.Speech;
 
 namespace Motion.Shows.Timing;
 
@@ -19,39 +19,40 @@ namespace Motion.Shows.Timing;
 /// the video still works.
 /// </summary>
 /// <param name="transcriber">The speech-to-text client.</param>
-/// <param name="eventLog">The event log.</param>
 /// <param name="artifactStore">The artifact store.</param>
-/// <param name="logger">The logger.</param>
 public sealed class ShowTimingReactor(
     ISpeechTranscriber transcriber,
-    IEventLog eventLog,
-    ShowArtifactStore artifactStore,
-    ILogger<ShowTimingReactor> logger) : IReactor
+    ShowArtifactStore artifactStore) : IReactor
 {
     /// <summary>
     /// Times the show when the voiceover has been synthesized.
     /// </summary>
     /// <param name="event">The voiceover completion.</param>
     /// <param name="context">The event context.</param>
-    /// <returns>A completed task.</returns>
-    public Task On(VoiceoverSynthesized @event, EventContext context) =>
-        PipelineStage.Run(eventLog, context, "timing", () =>
-            Time(ShowId.From(context.EventSourceId), @event.DurationSeconds));
+    /// <returns>The timing completion.</returns>
+    public Task<IEnumerable<object>> On(VoiceoverSynthesized @event, EventContext context) =>
+        PipelineStage.Run(context, "timing", async () =>
+        {
+            var lyricsJson = await Time(ShowId.From(context.EventSourceId), @event.DurationSeconds);
+            return new ShowTimed(lyricsJson);
+        });
 
     /// <summary>
     /// Re-times when the user asks for it.
     /// </summary>
     /// <param name="event">The request.</param>
     /// <param name="context">The event context.</param>
-    /// <returns>A completed task.</returns>
-    public Task On(ShowTimingRequested @event, EventContext context) =>
-        PipelineStage.Run(eventLog, context, "timing", () =>
+    /// <returns>The timing completion.</returns>
+    public Task<IEnumerable<object>> On(ShowTimingRequested @event, EventContext context) =>
+        PipelineStage.Run(context, "timing", async () =>
         {
-            var duration = Wav.ReadDuration(artifactStore.VoiceoverWav(ShowId.From(context.EventSourceId)));
-            return Time(ShowId.From(context.EventSourceId), duration);
+            var showId = ShowId.From(context.EventSourceId);
+            var duration = Wav.ReadDuration(artifactStore.VoiceoverWav(showId));
+            var lyricsJson = await Time(showId, duration);
+            return new ShowTimed(lyricsJson);
         });
 
-    async Task Time(ShowId showId, double audioDuration)
+    async Task<string> Time(ShowId showId, double audioDuration)
     {
         var planJson = ShowArtifactStore.ReadTextOrNull(artifactStore.PlanJson(showId))
             ?? throw new ShowPlanningFailed("The show has no plan — plan it first.");
@@ -62,7 +63,7 @@ public sealed class ShowTimingReactor(
         // collect the lyric lines: one per sentence, tagged with the positional scene id
         var lines = new List<(string SceneId, string Text, double WindowStart, double WindowEnd)>();
         double windowStart = 0;
-        var sceneGap = 0.45;
+        const double SceneGap = 0.45;
         for (var i = 0; i < plan.Scenes.Count; i++)
         {
             var spoken = plan.Scenes[i].Spoken.Trim();
@@ -71,7 +72,7 @@ public sealed class ShowTimingReactor(
             {
                 lines.Add(($"scene-{i + 1}", sentence, windowStart, windowStart + EstimateDuration(sentence)));
             }
-            windowStart += EstimateDuration(spoken) + sceneGap;
+            windowStart += EstimateDuration(spoken) + SceneGap;
         }
 
         var words = transcriber.IsEnabled
@@ -83,7 +84,7 @@ public sealed class ShowTimingReactor(
         var audioAnalysisJson = ShowTimingData.BuildAudioAnalysisJson(wavPath, lyricsJson);
         ShowArtifactStore.WriteText(artifactStore.AudioAnalysisJson(showId), audioAnalysisJson);
 
-        await eventLog.Append(showId, new ShowTimed(lyricsJson));
+        return lyricsJson;
     }
 
     static double EstimateDuration(string text)

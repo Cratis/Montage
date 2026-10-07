@@ -8,7 +8,7 @@ namespace Motion.Shows.Packaging;
 
 /// <summary>
 /// Assembles the show package: a folder the engine serves as-is, zipped as the durable artifact.
-///
+/// <para>Package layout:</para>
 ///   show.json            the spec
 ///   audio/voiceover.mp3  the narration
 ///   data/lyrics.json     word timings

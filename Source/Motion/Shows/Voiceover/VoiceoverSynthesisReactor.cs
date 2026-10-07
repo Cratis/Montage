@@ -2,13 +2,13 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.Text.Json;
-using Cratis.Chronicle.EventSequences;
+
 using Cratis.Chronicle.Observation;
 using Motion.AI;
-using Motion.Speech;
 using Motion.Shows.Packaging;
 using Motion.Shows.Planning;
 using Motion.Shows.Production;
+using Motion.Speech;
 
 namespace Motion.Shows.Voiceover;
 
@@ -19,15 +19,11 @@ namespace Motion.Shows.Voiceover;
 /// </summary>
 /// <param name="synthesizer">The text-to-speech client.</param>
 /// <param name="ffmpeg">ffmpeg, when present.</param>
-/// <param name="eventLog">The event log.</param>
 /// <param name="artifactStore">The artifact store.</param>
-/// <param name="logger">The logger.</param>
 public sealed class VoiceoverSynthesisReactor(
     ISpeechSynthesizer synthesizer,
     IFfmpeg ffmpeg,
-    IEventLog eventLog,
-    ShowArtifactStore artifactStore,
-    ILogger<VoiceoverSynthesisReactor> logger) : IReactor
+    ShowArtifactStore artifactStore) : IReactor
 {
     const double SceneGapSeconds = 0.45;
 
@@ -36,22 +32,30 @@ public sealed class VoiceoverSynthesisReactor(
     /// </summary>
     /// <param name="event">The plan.</param>
     /// <param name="context">The event context.</param>
-    /// <returns>A completed task.</returns>
-    public Task On(ShowPlanned @event, EventContext context) =>
-        PipelineStage.Run(eventLog, context, "voiceover", () => Synthesize(ShowId.From(context.EventSourceId), @event.PlanJson));
+    /// <returns>The voiceover completion.</returns>
+    public Task<IEnumerable<object>> On(ShowPlanned @event, EventContext context) =>
+        PipelineStage.Run(context, "voiceover", async () =>
+        {
+            var (audioPath, duration) = await Synthesize(ShowId.From(context.EventSourceId), @event.PlanJson);
+            return new VoiceoverSynthesized(audioPath, duration);
+        });
 
     /// <summary>
     /// Re-synthesizes when the user asks for it — the plan comes from disk.
     /// </summary>
     /// <param name="event">The request.</param>
     /// <param name="context">The event context.</param>
-    /// <returns>A completed task.</returns>
-    public Task On(VoiceoverSynthesisRequested @event, EventContext context) =>
-        PipelineStage.Run(eventLog, context, "voiceover", () =>
-            Synthesize(ShowId.From(context.EventSourceId), ShowArtifactStore.ReadTextOrNull(artifactStore.PlanJson(ShowId.From(context.EventSourceId)))
-                ?? throw new ShowPlanningFailed("The show has no plan to speak — plan it first.")));
+    /// <returns>The voiceover completion.</returns>
+    public Task<IEnumerable<object>> On(VoiceoverSynthesisRequested @event, EventContext context) =>
+        PipelineStage.Run(context, "voiceover", async () =>
+        {
+            var showId = ShowId.From(context.EventSourceId);
+            var (audioPath, duration) = await Synthesize(showId, ShowArtifactStore.ReadTextOrNull(artifactStore.PlanJson(showId))
+                ?? throw new ShowPlanningFailed("The show has no plan to speak — plan it first."));
+            return new VoiceoverSynthesized(audioPath, duration);
+        });
 
-    async Task Synthesize(ShowId showId, string planJson)
+    async Task<(string AudioPath, double Duration)> Synthesize(ShowId showId, string planJson)
     {
         if (!synthesizer.IsEnabled)
         {
@@ -82,7 +86,7 @@ public sealed class VoiceoverSynthesisReactor(
         // assemble: 0.45s of air between scenes
         var finalWav = artifactStore.VoiceoverWav(showId);
         (int Channels, int SampleRate)? format = null;
-        using (var target = WavWriter.Create(finalWav))
+        await using (var target = WavWriter.Create(finalWav))
         {
             for (var i = 0; i < takePaths.Count; i++)
             {
@@ -95,8 +99,8 @@ public sealed class VoiceoverSynthesisReactor(
 
         // mp3 for playback and packaging; wav when ffmpeg is missing (engine and renderer handle both)
         var mp3 = artifactStore.VoiceoverAudio(showId);
-        var audioPath = ffmpeg.ConvertToMp3(finalWav, mp3) ? "voiceover.mp3" : "voiceover.wav";
-
-        await eventLog.Append(showId, new VoiceoverSynthesized(audioPath, duration));
+        return ffmpeg.ConvertToMp3(finalWav, mp3)
+            ? ("voiceover.mp3", duration)
+            : ("voiceover.wav", duration);
     }
 }

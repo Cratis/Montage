@@ -1,7 +1,10 @@
 // Copyright (c) Cratis. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Motion.Speech;
 
 namespace Motion.AI;
@@ -24,7 +27,7 @@ public sealed record PlannedScene
     /// <summary>
     /// Gets the scene's visual parameters (type-specific), written straight into the spec.
     /// </summary>
-    public Dictionary<string, JsonElement> Params { get; init; } = new();
+    public IReadOnlyDictionary<string, JsonElement> Params { get; init; } = new Dictionary<string, JsonElement>();
 }
 
 /// <summary>
@@ -47,7 +50,7 @@ public sealed record ShowPlan
 /// Plans a show from a description: asks the language model for a story (scenes + narration),
 /// validates it against what the engine can actually render, and normalizes it.
 /// </summary>
-public static class ShowPlanner
+public static partial class ShowPlanner
 {
     /// <summary>
     /// The scene types the engine knows, with what each is for — the model picks from these.
@@ -76,8 +79,8 @@ public static class ShowPlanner
     /// <returns>The system and user prompts.</returns>
     public static (string System, string User) BuildPrompt(string description, double targetDurationSeconds, string tone, string audience)
     {
-        var spokenWords = Math.Round(targetDurationSeconds * 2.7);
-        var totalSeconds = Math.Round(targetDurationSeconds);
+        var spokenWords = Math.Round(targetDurationSeconds * 2.7, MidpointRounding.AwayFromZero);
+        var totalSeconds = Math.Round(targetDurationSeconds, MidpointRounding.AwayFromZero);
         var toneLine = string.IsNullOrWhiteSpace(tone) ? "confident, precise, calm" : tone;
         var audienceLine = string.IsNullOrWhiteSpace(audience) ? "technically literate" : audience;
         var system = $"""
@@ -108,7 +111,7 @@ public static class ShowPlanner
         return (system, user);
     }
 
-    const string JsonShape = """
+    const string JsonShape = /*lang=json,strict*/ """
         {
           "title": "the video's title, 2-6 words",
           "scenes": [
@@ -117,6 +120,16 @@ public static class ShowPlanner
           ]
         }
         """;
+
+    static readonly JsonSerializerOptions _json = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    [GeneratedRegex(@"\s+", RegexOptions.None, 500)]
+    private static partial Regex Whitespace { get; }
 
     /// <summary>
     /// Parses and normalizes the model's answer into a <see cref="ShowPlan"/>.
@@ -167,13 +180,7 @@ public static class ShowPlanner
     /// </summary>
     /// <param name="plan">The plan.</param>
     /// <returns>JSON.</returns>
-    public static string Serialize(ShowPlan plan) =>
-        JsonSerializer.Serialize(plan, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        });
+    public static string Serialize(ShowPlan plan) => JsonSerializer.Serialize(plan, _json);
 
     /// <summary>
     /// Deserializes a stored plan.
@@ -185,7 +192,7 @@ public static class ShowPlanner
         if (string.IsNullOrWhiteSpace(json)) return null;
         try
         {
-            return JsonSerializer.Deserialize<ShowPlan>(json, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            return JsonSerializer.Deserialize<ShowPlan>(json, _json);
         }
         catch (JsonException)
         {
@@ -196,6 +203,7 @@ public static class ShowPlanner
     static string ExtractJson(string answer)
     {
         var text = answer.Trim();
+
         // strip markdown fences if the model added them anyway
         if (text.StartsWith("```", StringComparison.Ordinal))
         {
@@ -214,8 +222,7 @@ public static class ShowPlanner
         if (string.IsNullOrWhiteSpace(spoken)) return string.Empty;
         var text = spoken.Trim();
         text = text.Trim('"', '\u201C', '\u201D');
-        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ");
-        return text;
+        return Whitespace.Replace(text, " ");
     }
 }
 

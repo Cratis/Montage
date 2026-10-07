@@ -8,22 +8,12 @@ namespace Motion.Shows;
 /// the artifact store: the ZIP is the package, the MP4s are the renders, everything else is
 /// working material for the pipeline.
 /// </summary>
-public sealed class ShowArtifactStore
+public sealed class ShowArtifactStore(IOptions<MotionOptions> options, IHostEnvironment environment)
 {
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ShowArtifactStore"/> class.
-    /// </summary>
-    /// <param name="options">The Motion options.</param>
-    /// <param name="environment">The host environment (for the content root).</param>
-    public ShowArtifactStore(IOptions<MotionOptions> options, IHostEnvironment environment)
-    {
-        Root = options.Value.WorkspacePathFor(environment.ContentRootPath);
-    }
-
     /// <summary>
     /// Gets the workspace root.
     /// </summary>
-    public string Root { get; }
+    public string Root { get; } = options.Value.WorkspacePathFor(environment.ContentRootPath);
 
     /// <summary>
     /// Gets the folder for a show, creating it if needed.

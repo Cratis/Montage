@@ -1,9 +1,9 @@
 // Copyright (c) Cratis. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using AspNetCoreArcBuilderExtensions = Microsoft.AspNetCore.Builder.ArcBuilderExtensions;
 using Microsoft.Extensions.FileProviders;
 using Motion;
+using AspNetCoreArcBuilderExtensions = Microsoft.AspNetCore.Builder.ArcBuilderExtensions;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: false);
@@ -24,15 +24,12 @@ builder = builder
             options.GeneratedApis.SegmentsToSkipForRoute = 1;
         },
         configureBuilder: arcBuilder => AspNetCoreArcBuilderExtensions.WithChronicle(arcBuilder))
-    .AddCratisChronicle(options =>
-    {
-        options.EventStore = "Motion";
-    });
+    .AddCratisChronicle(options => options.EventStore = "Motion");
 builder.UseCratisMongoDB();
 builder.Services.AddControllers();
 builder.Services.AddMvc();
 builder.Services.AddSwaggerGen(options => options.AddConcepts());
-builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(_ => _.SuppressModelStateInvalidFilter = true);
+builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options => options.SuppressModelStateInvalidFilter = true);
 
 var app = builder.Build();
 
@@ -45,10 +42,7 @@ app.UseCratisArc();
 app.UseCratisChronicle();
 
 app.UseSwagger();
-app.UseSwaggerUI(options =>
-{
-    options.SwaggerEndpoint("/swagger/v1/swagger.json", "Motion");
-});
+app.UseSwaggerUI(options => options.SwaggerEndpoint("/swagger/v1/swagger.json", "Motion"));
 
 // Serve generated show packages at /packages/{showId}/... so the engine preview can load them.
 var motion = app.Services.GetRequiredService<IOptions<MotionOptions>>().Value;
@@ -61,6 +55,7 @@ app.UseStaticFiles(new StaticFileOptions
     RequestPath = "/packages",
     ServeUnknownFileTypes = true,
 });
+
 // Rendered videos at /renders/{file}.
 app.UseStaticFiles(new StaticFileOptions
 {

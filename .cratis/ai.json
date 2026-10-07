@@ -1,10 +1,14 @@
 {
   "schemaVersion": "1.0",
   "harnesses": [
+    "pi",
     "claude"
   ],
   "profiles": [
-    "cratis/application"
+    "cratis/application/csharp",
+    "cratis/application/react",
+    "cratis/engineering/csharp",
+    "cratis/engineering/react"
   ],
   "languages": [
     "csharp",

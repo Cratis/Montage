@@ -1,7 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
     <PropertyGroup>
-        <TargetFramework>net10.0</TargetFramework>
-        <ImplicitUsings>enable</ImplicitUsings>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <OutputType>Exe</OutputType>
         <CratisProxiesOutputPath>$(MSBuildThisFileDirectory).frontend/Api</CratisProxiesOutputPath>
@@ -15,20 +13,24 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Cratis" Version="22.51.0" />
-        <PackageReference Include="Cratis.Chronicle" Version="19.33.3" />
-        <PackageReference Include="Cratis.Arc.MongoDB" Version="22.51.0" />
-        <PackageReference Include="Cratis.Arc.Swagger" Version="22.51.0" />
-        <PackageReference Include="Cratis.Arc.ProxyGenerator.Build" Version="22.51.0" />
+        <PackageReference Include="Cratis" />
+        <PackageReference Include="Cratis.Arc.MongoDB" />
+        <PackageReference Include="Cratis.Arc.Swagger" />
+        <PackageReference Include="Cratis.Arc.ProxyGenerator.Build" />
+        <!-- Direct reference so the central Cratis.Chronicle pin actually applies: without it the
+             client resolves transitively through Cratis and central package management does not pin
+             transitives, which would quietly hold the client at whatever Cratis referenced. -->
+        <PackageReference Include="Cratis.Chronicle" />
     </ItemGroup>
 
-    <ItemGroup>
-        <InternalsVisibleTo Include="Motion.Specs" />
-    </ItemGroup>
-
-    <Target Name="CopyEnginePreview" AfterTargets="Build" Condition="Exists('../../engine/dist/preview/index.html')">
+    <!--
+        The engine's preview player is a static Vite build (Source/Engine/dist/preview). Serving it
+        from the editor keeps preview and rendered output on the same origin; the Aspire dashboard
+        links straight into a scene-accurate preview of any packaged show.
+    -->
+    <Target Name="CopyEnginePreview" AfterTargets="Build" Condition="Exists('../Engine/dist/preview/index.html')">
         <ItemGroup>
-            <EnginePreviewFiles Include="../../engine/dist/preview/**/*" />
+            <EnginePreviewFiles Include="../Engine/dist/preview/**/*" />
         </ItemGroup>
         <Message Importance="high" Text="Copying motion-engine preview into wwwroot/preview" />
         <RemoveDir Directories="$(MSBuildThisFileDirectory)wwwroot/preview" />

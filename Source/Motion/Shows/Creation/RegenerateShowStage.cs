@@ -2,6 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using Cratis.Arc.ModelBinding;
+using Motion.Shows.Production;
 
 namespace Motion.Shows.Creation;
 
@@ -20,11 +21,11 @@ public record RegenerateShowStage(ShowId ShowId, string Stage)
     /// <returns>The event source id and the event to append.</returns>
     public (EventSourceId, object) Handle() => Stage.Trim().ToLowerInvariant() switch
     {
-        "plan" => (ShowId, (object)new Planning.ShowPlanningRequested()),
-        "voice" => (ShowId, (object)new Voiceover.VoiceoverSynthesisRequested()),
-        "time" => (ShowId, (object)new Timing.ShowTimingRequested()),
-        "package" => (ShowId, (object)new Packaging.ShowPackagingRequested()),
-        "render" => (ShowId, (object)new Rendering.RenderRequested()),
-        _ => throw new ArgumentException($"Unknown stage '{Stage}'. Use plan, voice, time, package or render."),
+        "plan" => (ShowId, new Planning.ShowPlanningRequested()),
+        "voice" => (ShowId, new Voiceover.VoiceoverSynthesisRequested()),
+        "time" => (ShowId, new Timing.ShowTimingRequested()),
+        "package" => (ShowId, new Packaging.ShowPackagingRequested()),
+        "render" => (ShowId, new Rendering.RenderRequested()),
+        _ => throw new UnknownProductionStage(Stage),
     };
 }

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <Sdk Name="Aspire.AppHost.Sdk" Version="13.1.2" />
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <UserSecretsId>8d4c1f6a-2b7e-4d3a-9c5f-0e8b6a1d4c7e</UserSecretsId>
+        <RootNamespace>Composition</RootNamespace>
+        <!-- ASPIRE010 warns that AspireUseCliBundle is false, which for this AppHost is correct rather
+             than a mistake: Aspire.AppHost.Sdk 13.1.2 adds Aspire.Hosting.Orchestration.<rid> and
+             Aspire.Dashboard.Sdk.<rid> unconditionally, so running `dotnet run` against Source/Composition
+             already has DCP and the dashboard. Setting AspireUseCliBundle=true would instead make the
+             build resolve an `aspire` CLI off PATH, which is not a prerequisite anybody is told to install.
+             Suppressed here rather than repo-wide: it is a fact about this one project. -->
+        <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Aspire.Hosting.AppHost" />
+        <PackageReference Include="Aspire.Hosting.JavaScript" />
+        <PackageReference Include="Cratis.Chronicle.Aspire" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="../Motion/Motion.csproj" />
+    </ItemGroup>
+</Project>

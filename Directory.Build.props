@@ -1,0 +1,33 @@
+<Project>
+    <PropertyGroup>
+        <ImplicitUsings>true</ImplicitUsings>
+        <TargetFramework>net10.0</TargetFramework>
+        <LangVersion>14.0</LangVersion>
+        <Nullable>enable</Nullable>
+
+        <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+        <!-- Motion does not host Arc's embedded event model. -->
+        <CratisEmbeddedScreenplayEnabled>false</CratisEmbeddedScreenplayEnabled>
+
+        <RunAnalyzersDuringBuild>True</RunAnalyzersDuringBuild>
+        <RunAnalyzersDuringLiveAnalysis>True</RunAnalyzersDuringLiveAnalysis>
+        <RunAnalyzers>True</RunAnalyzers>
+        <EnableNETAnalyzers>True</EnableNETAnalyzers>
+        <AnalysisMode>AllEnabledByDefault</AnalysisMode>
+
+        <GenerateDocumentationFile>false</GenerateDocumentationFile>
+        <NoWarn>NU1507;CS1591</NoWarn>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)'==''">
+        <Configuration>Debug</Configuration>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="StyleCop.Analyzers" PrivateAssets="All"/>
+        <PackageReference Include="Roslynator.Analyzers" PrivateAssets="All"/>
+        <PackageReference Include="Meziantou.Analyzer" PrivateAssets="All"/>
+        <PackageReference Include="Microsoft.Net.Compilers.Toolset" PrivateAssets="All"/>
+    </ItemGroup>
+</Project>

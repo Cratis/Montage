@@ -20,9 +20,10 @@ dependencies, consumable by anything that can serve a folder of files.
 ## The three parts
 
 ```
-engine/                 motion-engine — deterministic Canvas2D render engine (pure TS)
+Source/Engine/          motion-engine — deterministic Canvas2D render engine (pure TS)
 Source/Motion/          the editor: C# Arc backend + Chronicle + React frontend
-docker-compose.yml      MongoDB (replica set) + the Chronicle server
+Source/Composition/     Aspire AppHost — one command runs all of it
+docker/mock-services.mjs  canned LLM/TTS/STT for wiring tests without AI services
 ```
 
 ### `engine/` — the render engine
@@ -42,7 +43,7 @@ cheap — change a parameter, not a timeline.
   sheets and video)
 
 ```bash
-cd engine
+cd Source/Engine
 npm install && npm run build
 node scripts/render.ts video --pkg demo --out out/demo.mp4   # the bundled demo show
 node scripts/render.ts stills --pkg demo --t 1,8,16          # frames as PNG
@@ -70,30 +71,44 @@ The frontend lives in `Source/Motion/.frontend/` — React + `@cratis/arc.react`
 `@cratis/components` (PrimeReact), Cratis dark theme, live pipeline progress over
 observable queries.
 
-### `docker-compose.yml` — Chronicle + MongoDB
+### `Source/Composition/` — Aspire
 
-Chronicle runs as a server (port 35000); the editor connects to it. MongoDB runs as a
-single-node replica set (Chronicle and the read-model change streams require it).
+The AppHost wires the whole stack: a MongoDB 7 replica set (the way Chronicle needs it —
+self-initiating, `directConnection=true`), the Chronicle kernel pinned to the same
+version as the client package, the editor and the Vite frontend, with readiness gates so
+nothing races the kernel. It is the one command:
+
+```bash
+dotnet run --project Source/Composition
+```
+
+The Aspire dashboard opens; the editor is on http://localhost:5000, the frontend dev
+server on http://localhost:9000.
 
 ## Getting started
 
+Prerequisites: .NET 10 SDK, Docker, Node, ffmpeg, and a Chromium/Chrome for the engine
+renderer.
+
 ```bash
-# 1. Infrastructure
-docker compose up -d
+# 1. The engine (one-time build so the preview player is served by the editor)
+cd Source/Engine && npm install && npm run build && cd ../..
 
-# 2. The editor backend (listens on http://localhost:5000)
-cd Source/Motion
-dotnet run
+# 2. The frontend dependencies (one-time)
+cd Source/Motion/.frontend && npm install && cd ../../..
 
-# 3. The editor frontend (http://localhost:9000, proxies to :5000)
-cd Source/Motion/.frontend
-npm install
-npm run dev
+# 3. Everything up, dashboard included — MongoDB, Chronicle, TTS, STT, editor, frontend
+dotnet run --project Source/Composition
 
 # 4. Describe a video and press "Plan & produce"
 ```
 
-Point `Source/Motion/appsettings.local.json` at your self-hosted services:
+Without Aspire, `Source/docker-compose.yml` brings up the same infrastructure and speech
+services (MongoDB replica set, Chronicle, Kokoro TTS on :8880, Speaches STT on :8770);
+then run the editor itself with `cd Source/Motion && dotnet run`.
+
+Point `Source/Motion/appsettings.local.json` (gitignored) at your self-hosted services —
+they default to the ports the compose file and the AppHost already provide:
 
 ```jsonc
 {
@@ -113,13 +128,12 @@ Point `Source/Motion/appsettings.local.json` at your self-hosted services:
 
 No services configured? The pipeline still works end to end for wiring: planning fails
 with a readable error, the editor shows it, and any stage can be retried once a service
-is available. For a full dry run without any services at all:
+is available. For a full dry run without any services at all, run the mock services and
+point the three endpoints in `appsettings.local.json` at `http://localhost:8790`:
 
 ```bash
 node docker/mock-services.mjs        # canned plan + tone WAVs + word timings on :8790
 ```
-
-…then point the three endpoints in `appsettings.local.json` at `http://localhost:8790`.
 
 ## What "automated" means here
 

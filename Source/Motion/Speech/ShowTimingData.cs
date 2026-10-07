@@ -67,8 +67,8 @@ public static class ShowTimingData
                 else
                 {
                     // no transcription for this word: estimate from the remaining window
-                    var remaining = lineWords.Count - wordDocs.Count;
-                    var span = Math.Max(0.2, (windowEnd - Math.Max(lineEnd, windowStart)) - 0.15);
+                    var remaining = lineWords.Length - wordDocs.Count;
+                    var span = Math.Max(0.2, windowEnd - Math.Max(lineEnd, windowStart) - 0.15);
                     var dur = Math.Clamp(span / Math.Max(remaining, 1), 0.12, 0.7);
                     var start = Math.Max(lineEnd, windowStart);
                     wordDocs.Add(new { w = lw, start = Round(start), end = Round(start + dur) });
@@ -100,7 +100,7 @@ public static class ShowTimingData
     public static string BuildAudioAnalysisJson(string wavPath, string lyricsJson)
     {
         var (samples, sampleRate) = Wav.ReadMonoSamples(wavPath);
-        var fps = 100;
+        const int fps = 100;
         var envelopeLength = Math.Max(1, (int)Math.Ceiling(samples.Length / (double)sampleRate * fps));
         var envelope = new double[envelopeLength];
         var framesPerEnvelope = sampleRate / (double)fps;
@@ -132,17 +132,19 @@ public static class ShowTimingData
             }
         }
 
-        return JsonSerializer.Serialize(new
-        {
-            duration = Round(samples.Length / (double)sampleRate),
-            fps,
-            features = new { rms = envelope },
-            onsets = new { vocal = onsets },
-        }, _json);
+        return JsonSerializer.Serialize(
+            new
+            {
+                duration = Round(samples.Length / (double)sampleRate),
+                fps,
+                features = new { rms = envelope },
+                onsets = new { vocal = onsets },
+            },
+            _json);
     }
 
-    static double Round(double v) => Math.Round(v, 3);
+    static double Round(double v) => Math.Round(v, 3, MidpointRounding.AwayFromZero);
 
-    static IReadOnlyList<string> SplitWords(string text) =>
+    static string[] SplitWords(string text) =>
         text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 }

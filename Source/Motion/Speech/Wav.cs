@@ -4,6 +4,7 @@
 // Minimal RIFF/WAVE reading: duration and raw PCM samples for envelope analysis.
 // The TTS service returns standard 16-bit PCM WAV — parsing it in-process avoids an
 // extra ffmpeg round-trip for the loudness analysis.
+using System.Runtime.InteropServices;
 
 namespace Motion.Speech;
 
@@ -15,6 +16,11 @@ public static class Wav
     /// <summary>
     /// Represents the parsed WAV header.
     /// </summary>
+    /// <param name="Channels">Channel count.</param>
+    /// <param name="SampleRate">Samples per second.</param>
+    /// <param name="BitsPerSample">Bits per sample (16 for PCM from the TTS).</param>
+    /// <param name="DataLength">Byte length of the data chunk.</param>
+    [StructLayout(LayoutKind.Sequential)]
     public readonly record struct Header(int Channels, int SampleRate, int BitsPerSample, int DataLength)
     {
         /// <summary>
@@ -38,7 +44,7 @@ public static class Wav
     /// Parses the header of a WAV stream.
     /// </summary>
     /// <param name="stream">The stream, positioned at the start.</param>
-    /// <returns>The header.</summary>
+    /// <returns>The header.</returns>
     public static Header ReadHeader(Stream stream)
     {
         using var reader = new BinaryReader(stream, System.Text.Encoding.ASCII, leaveOpen: true);
@@ -93,6 +99,7 @@ public static class Wav
         var header = ReadHeader(path);
         using var stream = File.OpenRead(path);
         using var reader = new BinaryReader(stream);
+
         // skip to data chunk (past RIFF + WAVE markers)
         stream.Position = 12;
         while (true)
@@ -111,7 +118,7 @@ public static class Wav
             var acc = 0.0;
             for (var c = 0; c < header.Channels; c++)
             {
-                var offset = (frame * header.Channels + c) * 2;
+                var offset = ((frame * header.Channels) + c) * 2;
                 var v = offset + 1 < bytes.Length ? BitConverter.ToInt16(bytes, offset) : (short)0;
                 acc += v / 32768f;
             }
