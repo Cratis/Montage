@@ -2,8 +2,8 @@
     "name": "motion-app",
     "private": true,
     "scripts": {
-        "dev": "npm run dev --prefix .frontend",
-        "build": "npm run build --prefix .frontend",
-        "compile": "npm run compile --prefix .frontend"
+        "dev": "node .frontend/node_modules/vite/bin/vite.js --config .frontend/vite.config.ts",
+        "build": "node .frontend/node_modules/vite/bin/vite.js build --config .frontend/vite.config.ts",
+        "compile": "node .frontend/node_modules/typescript/bin/tsc --project .frontend/tsconfig.json --noEmit"
     }
 }
