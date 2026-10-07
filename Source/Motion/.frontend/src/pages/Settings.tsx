@@ -75,7 +75,7 @@ export function SettingsDialog({ visible, onHide }: { visible: boolean; onHide: 
         : (addAnthropic.name ?? '').trim().length > 0 && (addAnthropic.apiKey ?? '').trim().length > 0;
 
     return (
-        <Dialog title='AI providers' visible={visible} onCancel={onHide} dismissable>
+        <Dialog title='AI providers' visible={visible} onCancel={onHide} dismissable buttons={null}>
             <div className='flex flex-col gap-4 pt-2 min-w-[26rem]'>
                 <div className='flex flex-col gap-2 max-h-56 overflow-y-auto'>
                     {sorted.length === 0 && (
