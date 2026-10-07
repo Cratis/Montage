@@ -14,6 +14,7 @@ namespace Motion.Shows.Creation;
 /// <param name="TargetDurationSeconds">Roughly how long the video should be, in seconds.</param>
 /// <param name="Tone">Optional tone hint (e.g. "technical, calm" or "energetic launch").</param>
 /// <param name="Audience">Optional audience hint (e.g. "developers evaluating event sourcing").</param>
+/// <param name="AIProviderId">Optional identity of the AI provider that will plan the show.</param>
 [EventType]
 public record ShowCreated(
     string Title,
@@ -21,4 +22,5 @@ public record ShowCreated(
     string Voice,
     double TargetDurationSeconds,
     string Tone,
-    string Audience);
+    string Audience,
+    string AIProviderId = "");

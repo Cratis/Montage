@@ -1,8 +1,10 @@
 // Copyright (c) Cratis. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using Cratis.AI.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Motion;
+using Motion.Hosting;
 using AspNetCoreArcBuilderExtensions = Microsoft.AspNetCore.Builder.ArcBuilderExtensions;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -13,9 +15,15 @@ builder.Services.AddOptions<MotionOptions>().BindConfiguration("Cratis:Motion").
 builder.Services.AddSingleton<Motion.Shows.Packaging.IShowPackager, Motion.Shows.Packaging.ShowPackager>();
 builder.Services.AddSingleton<Motion.Shows.Packaging.IFfmpeg, Motion.Shows.Packaging.Ffmpeg>();
 builder.Services.AddSingleton<Motion.Shows.Rendering.IVideoRenderer, Motion.Shows.Rendering.EngineRenderer>();
-builder.Services.AddSingleton<Motion.Shows.Production.PipelineStageExecutor>();
 builder.Services.AddSingleton<Motion.Speech.ISpeechSynthesizer, Motion.Speech.SpeechSynthesizer>();
 builder.Services.AddSingleton<Motion.Speech.ISpeechTranscriber, Motion.Speech.SpeechTranscriber>();
+
+// Must run before AddCratisArc (which snapshots Arc's type universe the first time it is
+// touched) - a lazily-loaded Cratis.AI.dll afterwards would contribute its providers, commands
+// and queries to that universe silently too late. Motion's one agent seam - the planner - goes
+// with it; the providers themselves are configured at runtime through Cratis.AI's own commands.
+builder.Services.AddCratisAI(ai => ai
+    .WithAgents<Motion.AI.MotionAIAgents>());
 
 builder = builder
     .AddCratisArc(
@@ -27,6 +35,11 @@ builder = builder
         configureBuilder: arcBuilder => AspNetCoreArcBuilderExtensions.WithChronicle(arcBuilder))
     .AddCratisChronicle(options => options.EventStore = "Motion");
 builder.UseCratisMongoDB();
+
+// After UseCratisMongoDB: the job system's MongoDB storage registers the concrete IMongoClient
+// the silo owns, and that registration must be the one that wins - the jobs storage is a
+// singleton and cannot consume a scoped client. Same arrangement as Direct's AddDirectOrleans.
+builder.AddMotionOrleans();
 builder.Services.AddControllers();
 builder.Services.AddMvc();
 builder.Services.AddSwaggerGen(options => options.AddConcepts());

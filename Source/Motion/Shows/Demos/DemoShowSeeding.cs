@@ -6,6 +6,7 @@ using Motion.AI;
 using Motion.Shows.Creation;
 using Motion.Shows.Planning;
 
+#if DEBUG
 namespace Motion.Shows.Demos;
 
 /// <summary>
@@ -19,7 +20,6 @@ namespace Motion.Shows.Demos;
 /// so restarts never duplicate a demo.
 /// </remarks>
 /// <param name="artifactStore">The artifact store, where the plans live on disk.</param>
-#if DEBUG
 public sealed class DemoShowSeeding(ShowArtifactStore artifactStore) : ICanSeedEvents
 {
     /// <summary>

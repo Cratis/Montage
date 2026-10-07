@@ -15,6 +15,7 @@ namespace Motion.Shows.Creation;
 /// <param name="TargetDurationSeconds">Optional target length in seconds (default 60).</param>
 /// <param name="Tone">Optional tone hint.</param>
 /// <param name="Audience">Optional audience hint.</param>
+/// <param name="AIProviderId">Optional identity of the AI provider that will plan the show.</param>
 [Command]
 public record CreateShow(
     string Description,
@@ -22,7 +23,8 @@ public record CreateShow(
     string? Voice,
     double? TargetDurationSeconds,
     string? Tone,
-    string? Audience)
+    string? Audience,
+    string? AIProviderId)
 {
     /// <summary>
     /// Handles the command by producing the <see cref="ShowCreated"/> event.
@@ -37,6 +39,7 @@ public record CreateShow(
             string.IsNullOrWhiteSpace(Voice) ? "af_heart" : Voice,
             TargetDurationSeconds is > 0 ? Math.Clamp(TargetDurationSeconds.Value, 15, 300) : 60,
             Tone?.Trim() ?? string.Empty,
-            Audience?.Trim() ?? string.Empty));
+            Audience?.Trim() ?? string.Empty,
+            AIProviderId?.Trim() ?? string.Empty));
     }
 }

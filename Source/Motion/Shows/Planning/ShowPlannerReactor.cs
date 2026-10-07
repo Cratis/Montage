@@ -3,90 +3,63 @@
 
 using Cratis.Chronicle.Observation;
 using MongoDB.Driver;
-using Motion.AI;
+using Motion.Jobs;
 using Motion.Shows.Creation;
 using Motion.Shows.Listing;
-using Motion.Shows.Production;
 
 namespace Motion.Shows.Planning;
 
 /// <summary>
-/// Plans a show when it is created or when the user asks for a re-plan: asks the language model
-/// for the story, validates it against the engine's scene catalog, and returns the plan —
-/// stored on disk, recorded in the event.
+/// Starts a durable planning job when a show is created or a re-plan is asked for. The job - not
+/// the reactor - asks the language model for the story and appends <see cref="ShowPlanned"/> when
+/// it lands.
 /// </summary>
-/// <remarks>
-/// A reactor is the right home for this: Chronicle persists the observation offset, so a show
-/// mid-planning resumes after a restart.
-/// </remarks>
-/// <param name="languageModel">The language model.</param>
-/// <param name="artifactStore">The artifact store.</param>
-/// <param name="shows">The show listing collection (for re-plans, where the original request lives in the read model).</param>
-/// <param name="stages">The stage executor (planning can take minutes; the reactor acks immediately).</param>
+/// <param name="jobs">Where the planning is handed to.</param>
+/// <param name="shows">The show listing collection (a re-plan reads the original ask from the read model).</param>
 public sealed class ShowPlannerReactor(
-    ILanguageModel languageModel,
-    ShowArtifactStore artifactStore,
-    IMongoCollection<Show> shows,
-    PipelineStageExecutor stages) : IReactor
+    IJobsManagerAccessor jobs,
+    IMongoCollection<Show> shows) : IReactor
 {
     /// <summary>
-    /// Plans the show when it is created.
+    /// Plans the show when it is created. <c>[OnceOnly]</c> guards the job from being started again
+    /// when Chronicle replays this observer.
     /// </summary>
     /// <param name="event">The creation event with the description.</param>
     /// <param name="context">The event context.</param>
-    /// <returns>The planning completion.</returns>
-    public Task On(ShowCreated @event, EventContext context)
-    {
-        stages.Begin(context, "planning", async () =>
-        {
-            var showId = ShowId.From(context.EventSourceId);
-
-            // A stored plan is the source of truth — seeded demos arrive with their plan already
-            // on disk, and a crashed planning stage must not re-ask the model on redelivery.
-            // Re-planning is an explicit request (ShowPlanningRequested), never automatic.
-            var existing = ShowArtifactStore.ReadTextOrNull(artifactStore.PlanJson(showId));
-            if (existing is not null)
-            {
-                var stored = ShowPlanner.Deserialize(existing) ?? throw new ShowPlanningFailed("The stored plan could not be read.");
-                return new ShowPlanned(stored.Title, existing);
-            }
-
-            var plan = await Plan(context.EventSourceId, @event.Description, @event.TargetDurationSeconds, @event.Tone, @event.Audience);
-            return new ShowPlanned(plan.Title, ShowPlanner.Serialize(plan));
-        });
-        return Task.CompletedTask;
-    }
+    /// <returns>Awaitable task.</returns>
+    [OnceOnly]
+    public Task On(ShowCreated @event, EventContext context) =>
+        jobs.For(context).Start<IShowPlanningJob, ShowPlanningRequest>(new(
+            ShowId.From(context.EventSourceId).Value.ToString(),
+            @event.Description,
+            @event.TargetDurationSeconds,
+            @event.Tone,
+            @event.Audience,
+            @event.AIProviderId));
 
     /// <summary>
-    /// Plans the show when a re-plan is requested — the description comes from the read model.
+    /// Plans the show when a re-plan is requested - the description and provider come from the read
+    /// model. A show that cannot be found is logged and skipped rather than failed: a poisoned
+    /// partition is worse than a missing re-plan.
     /// </summary>
     /// <param name="event">The request.</param>
     /// <param name="context">The event context.</param>
-    /// <returns>The planning completion.</returns>
-    public Task On(ShowPlanningRequested @event, EventContext context)
+    /// <returns>Awaitable task.</returns>
+    [OnceOnly]
+    public async Task On(ShowPlanningRequested @event, EventContext context)
     {
-        stages.Begin(context, "planning", async () =>
+        var show = await shows.Find(s => s.Id == ShowId.From(context.EventSourceId)).FirstOrDefaultAsync();
+        if (show is null)
         {
-            var show = await shows.Find(s => s.Id == ShowId.From(context.EventSourceId)).FirstOrDefaultAsync()
-                ?? throw new ShowPlanningFailed("The show could not be found for re-planning.");
-            var plan = await Plan(context.EventSourceId, show.Description, show.TargetDurationSeconds, show.Tone, show.Audience);
-            return new ShowPlanned(plan.Title, ShowPlanner.Serialize(plan));
-        });
-        return Task.CompletedTask;
-    }
-
-    async Task<ShowPlan> Plan(EventSourceId eventSourceId, string description, double targetDuration, string tone, string audience)
-    {
-        if (!languageModel.IsEnabled)
-        {
-            throw new AiNotConfigured(
-                "No language model is configured. Set Cratis:Motion:Ai in appsettings.local.json " +
-                "(an OpenAI-compatible endpoint such as Ollama or LM Studio, or Anthropic).");
+            return;
         }
-        var (system, user) = ShowPlanner.BuildPrompt(description, targetDuration, tone, audience);
-        var answer = await languageModel.Complete(system, user, CancellationToken.None);
-        var plan = ShowPlanner.Parse(answer);
-        ShowArtifactStore.WriteText(artifactStore.PlanJson(ShowId.From(eventSourceId)), ShowPlanner.Serialize(plan));
-        return plan;
+
+        await jobs.For(context).Start<IShowPlanningJob, ShowPlanningRequest>(new(
+            show.Id.Value.ToString(),
+            show.Description,
+            show.TargetDurationSeconds,
+            show.Tone,
+            show.Audience,
+            show.AIProviderId));
     }
 }

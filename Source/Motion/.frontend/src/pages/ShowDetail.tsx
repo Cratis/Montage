@@ -6,6 +6,7 @@ import { useParams, Link } from 'react-router-dom';
 import { Button } from '@cratis/components/Common';
 import { Show, ObserveAll } from '../../Api/Shows/Listing';
 import { RegenerateShowStage } from '../../Api/Shows/Creation';
+import { All as AllJobs, JobActivity } from '../../Api/Shows/Production';
 import { ShowPlan } from '../plan';
 
 export const stageFlow = [
@@ -40,18 +41,25 @@ export function StatusBadge({ status }: { status: string }) {
 export function ShowDetail() {
     const { id } = useParams();
     const [shows] = ObserveAll.use();
+    const [jobs] = AllJobs.use();
     const show = shows.data.find((s) => s.id.toString() === id);
     const plan = useMemo(() => ShowPlan.parse(show?.planJson), [show?.planJson]);
+    const showJobs = jobs.data
+        .filter((job: JobActivity) => job.showId === id)
+        .sort((a: JobActivity, b: JobActivity) => new Date(b.created).getTime() - new Date(a.created).getTime());
 
     if (!show) {
         return (
-            <div className='min-h-screen grid place-items-center text-[var(--cr-motion-dim)]'>
-                {shows.data.length === 0 ? 'Loading…' : (
-                    <div className='text-center'>
-                        <p className='mb-4'>That show does not exist.</p>
-                        <Link to='/'><Button label='Back to shows' text /></Link>
-                    </div>
-                )}
+            <div className='min-h-screen grid place-items-center px-8'>
+                <div className='w-full max-w-2xl flex flex-col gap-3'>
+                    <div className='eyebrow mb-1'>production activity</div>
+                    {showJobs.length === 0 && (
+                        <div className='panel p-6 text-center text-sm text-[var(--cr-motion-dim)]'>
+                            {shows.data.length === 0 ? 'Connecting…' : 'No production activity yet.'}
+                        </div>
+                    )}
+                    {showJobs.map((job) => <JobRow key={job.jobId.toString()} job={job} />)}
+                </div>
             </div>
         );
     }
@@ -106,6 +114,14 @@ export function ShowDetail() {
                     <p className='text-xs text-[var(--cr-motion-dim)] mt-3'>
                         Rendering captures every frame in headless Chrome and encodes with ffmpeg — a minute or two per minute of video.
                     </p>
+                )}
+                {showJobs.length > 0 && (
+                    <div className='mt-5 pt-4 border-t border-[rgba(255,255,255,0.08)]'>
+                        <div className='eyebrow mb-3'>jobs</div>
+                        <div className='flex flex-col gap-2'>
+                            {showJobs.slice(0, 4).map((job) => <JobRow key={job.jobId.toString()} job={job} />)}
+                        </div>
+                    </div>
                 )}
             </section>
 
@@ -203,5 +219,38 @@ function RetryButton({ showId, stage }: { showId: any; stage: string }) {
             title={`Re-run ${stage} — everything after it re-runs too`}>
             ↻ {stage}
         </button>
+    );
+}
+
+
+const jobStatusColor = (job: JobActivity) =>
+    job.error ? '#e5484d' : job.isRunning ? 'var(--cr-motion-amber)' : 'var(--cr-motion-violet)';
+
+/**
+ * One durable job in the production pipeline: what it is, whether it is running, and why it
+ * failed when it did. These are Orleans jobs - they survive a restart - so the view is history,
+ * not just the live tick.
+ */
+export function JobRow({ job }: { job: JobActivity }) {
+    const color = jobStatusColor(job);
+    const started = new Date(job.created);
+    return (
+        <div className='panel px-3.5 py-2.5 flex items-center gap-3'>
+            <span
+                className={`stage-dot flex-shrink-0 ${job.isRunning ? 'active pulsing' : job.error ? 'failed' : 'done'}`}
+                style={job.error && !job.isRunning ? { background: '#e5484d', boxShadow: 'none' } : undefined} />
+            <div className='min-w-0 flex-1'>
+                <div className='text-sm truncate'>{job.details}</div>
+                <div className='mono text-[11px] text-[var(--cr-motion-faint)]'>
+                    {job.type.replace(/^Motion\.Shows\.[a-z]+\./, '').replace(/Job$/, '')} · {started.toLocaleTimeString()}
+                    {job.error && <span className='text-[#e5484d]'> — {job.error}</span>}
+                </div>
+            </div>
+            <span
+                className='mono text-[11px] px-2 py-0.5 rounded-full border whitespace-nowrap'
+                style={{ color, borderColor: color, background: 'rgba(255,255,255,0.03)' }}>
+                {job.isRunning ? 'running' : job.error ? 'failed' : (job.status || '').toLowerCase()}
+            </span>
+        </div>
     );
 }

@@ -7,6 +7,7 @@ import { Button } from '@cratis/components/Common';
 import { Dialog } from '@cratis/components/Dialogs';
 import { Show, ObserveAll } from '../../Api/Shows/Listing';
 import { CreateShow } from '../../Api/Shows/Creation';
+import { AllAIProviders } from '@cratis/ai';
 import { StatusBadge, stageFlow } from './ShowDetail';
 
 const statusRank = (show: Show) => stageFlow.findIndex((s) => s.status === show.status);
@@ -87,6 +88,7 @@ const stageIndex = (status: string) => stageFlow.findIndex((s) => s.status === s
 function CreateShowDialog({ visible, onHide }: { visible: boolean; onHide: () => void }) {
     const navigate = useNavigate();
     const [command, setValues, clear] = CreateShow.use();
+    const [providers] = AllAIProviders.use();
     const [busy, setBusy] = useState(false);
 
     const create = async () => {
@@ -172,6 +174,28 @@ function CreateShowDialog({ visible, onHide }: { visible: boolean; onHide: () =>
                             onChange={(e) => setValues({ audience: e.target.value })}
                         />
                     </div>
+                </div>
+                <div>
+                    <label className='eyebrow block mb-2'>Planned by (AI provider)</label>
+                    <select
+                        className='w-full panel px-3 py-2 text-sm outline-none focus:border-[var(--cr-motion-violet)] bg-transparent'
+                        value={command.AIProviderId ?? ''}
+                        onChange={(e) => setValues({ AIProviderId: e.target.value || undefined })}>
+                        <option value=''>— pick a provider —</option>
+                        {[...providers.data]
+                            .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
+                            .map((provider) => (
+                                <option key={provider.id.toString()} value={provider.id.toString()}>
+                                    {provider.name}
+                                </option>
+                            ))}
+                    </select>
+                    {providers.data.length === 0 && (
+                        <p className='text-xs text-[#e5484d] mt-2'>
+                            No AI providers configured — add one under the cogwheel, top right. Without
+                            one, only shows with a plan already on disk can be produced.
+                        </p>
+                    )}
                 </div>
                 <p className='text-xs text-[var(--cr-motion-faint)]'>
                     Everything not set here gets a sensible default — the planner decides the story,

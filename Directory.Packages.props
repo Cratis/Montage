@@ -23,5 +23,17 @@
     <PackageVersion Include="Roslynator.Analyzers" Version="5.0.0" />
     <PackageVersion Include="Meziantou.Analyzer" Version="3.0.259" />
     <PackageVersion Include="Microsoft.Net.Compilers.Toolset" Version="5.9.0" />
-  </ItemGroup>
+      <PackageVersion Include="Cratis.AI" Version="7.9.1" />
+    <!-- Microsoft Orleans: Orleans.Providers.MongoDB has no Orleans 10 release - 9.5.0 is the
+         newest - and it pulls in Microsoft.Orleans.Reminders 9.0.1. Pinning Reminders explicitly at
+         10.3.1 keeps the whole Orleans surface on 10.x (Direct's arrangement). -->
+    <PackageVersion Include="Cratis.Orleans" Version="1.15.2" />
+    <PackageVersion Include="Cratis.Orleans.Chronicle" Version="1.15.2" />
+    <PackageVersion Include="Cratis.Orleans.Storage.MongoDB" Version="1.15.2" />
+    <PackageVersion Include="Microsoft.Orleans.Reminders" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.Sdk" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.Server" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.Serialization.SystemTextJson" Version="10.3.1" />
+    <PackageVersion Include="Orleans.Providers.MongoDB" Version="9.5.0" />
+</ItemGroup>
 </Project>

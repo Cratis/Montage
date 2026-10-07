@@ -27,11 +27,10 @@ dotnet_diagnostic.RCS1141.severity = suggestion
 # mirrors the engine's show.json schema, one type per node (SceneWindow, Header, ...).
 dotnet_diagnostic.CA1034.severity = none
 
-# ARCCHR0003 (reactor reaching the default event log): the pipeline's stages run for minutes
-# (synthesis, transcription, rendering) and cannot hold Chronicle's subscriber. Reactors ack
-# immediately; the stage's completion - or ShowProductionFailed - is appended from the
-# PipelineStageExecutor when the work lands. This is the deliberate shape of the pipeline.
-dotnet_diagnostic.ARCCHR0003.severity = none
+# Orleans analyzer noise on job grain interfaces and requests - Direct's arrangement. The job
+# system derives stable type aliases from the full type names the jobs are persisted under.
+dotnet_diagnostic.ORLEANS0010.severity = none
+
 # Arc's legacy decision-read migration diagnostic is advisory (Info) upstream. Keep it
 # visible without changing unrelated command concurrency semantics during an identity upgrade.
 dotnet_diagnostic.ARCCHR0011.severity = suggestion
