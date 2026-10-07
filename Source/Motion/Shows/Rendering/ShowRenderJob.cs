@@ -86,7 +86,8 @@ public class RenderShowStep(
     protected override async Task<Catch<JobStepResult>> PerformStep(RenderShowStepState currentState, CancellationToken cancellationToken)
     {
         var showId = ShowId.From(Guid.Parse(currentState.ShowId));
-
+        try
+        {
         await using var scope = scopeFactory.CreateAsyncScope();
         var services = scope.ServiceProvider;
         var renderer = services.GetRequiredService<IVideoRenderer>();
@@ -114,6 +115,12 @@ public class RenderShowStep(
 
         await JobStepAppender.Append(this, chronicleClient, showId.Value, new RenderCompleted(relativePath, duration, size));
         return JobStepResult.Succeeded();
+        }
+        catch (Exception exception)
+        {
+            var message = await JobStepAppender.ReportFailure(this, chronicleClient, showId.Value, "render", exception, logger);
+            return JobStepResult.Failed(message);
+        }
     }
 
     /// <inheritdoc/>

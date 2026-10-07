@@ -24,5 +24,5 @@ public sealed class StoryboardProducer(IJobsManagerAccessor jobs) : IReactor
     [OnceOnly]
     public Task On(ShowStoryboardSaved @event, EventContext context) =>
         jobs.For(context).Start<IVoiceoverSynthesisJob, VoiceoverSynthesisRequest>(new(
-            context.EventSourceId.Value.ToString()));
+            context.EventSourceId.Value));
 }

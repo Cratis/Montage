@@ -90,7 +90,8 @@ public class SynthesizeVoiceoverStep(
     protected override async Task<Catch<JobStepResult>> PerformStep(SynthesizeVoiceoverStepState currentState, CancellationToken cancellationToken)
     {
         var showId = ShowId.From(Guid.Parse(currentState.ShowId));
-
+        try
+        {
         await using var scope = scopeFactory.CreateAsyncScope();
         var services = scope.ServiceProvider;
         var synthesizer = services.GetRequiredService<ISpeechSynthesizer>();
@@ -106,6 +107,12 @@ public class SynthesizeVoiceoverStep(
 
         await JobStepAppender.Append(this, chronicleClient, showId.Value, new VoiceoverSynthesized(audioPath, duration));
         return JobStepResult.Succeeded();
+        }
+        catch (Exception exception)
+        {
+            var message = await JobStepAppender.ReportFailure(this, chronicleClient, showId.Value, "voice", exception, logger);
+            return JobStepResult.Failed(message);
+        }
     }
 
     /// <inheritdoc/>

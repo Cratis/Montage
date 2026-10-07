@@ -84,7 +84,8 @@ public class PackageShowStep(
     protected override async Task<Catch<JobStepResult>> PerformStep(PackageShowStepState currentState, CancellationToken cancellationToken)
     {
         var showId = ShowId.From(Guid.Parse(currentState.ShowId));
-
+        try
+        {
         await using var scope = scopeFactory.CreateAsyncScope();
         var services = scope.ServiceProvider;
         var packager = services.GetRequiredService<IShowPackager>();
@@ -119,6 +120,12 @@ public class PackageShowStep(
 
         await JobStepAppender.Append(this, chronicleClient, showId.Value, new ShowPackaged(packageDirectory, packageZip));
         return JobStepResult.Succeeded();
+        }
+        catch (Exception exception)
+        {
+            var message = await JobStepAppender.ReportFailure(this, chronicleClient, showId.Value, "package", exception, logger);
+            return JobStepResult.Failed(message);
+        }
     }
 
     /// <inheritdoc/>

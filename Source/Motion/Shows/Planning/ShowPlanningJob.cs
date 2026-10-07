@@ -97,7 +97,7 @@ public class ShowPlanningJob : Job<ShowPlanningRequest, JobState>, IShowPlanning
 /// <param name="logger">The logger.</param>
 /// <param name="scopeFactory">The scope services are resolved from - a step runs outside any request.</param>
 /// <param name="chronicleClient">The <see cref="IChronicleClient"/> the plan is appended through.</param>
-public class PlanShowStep(
+public partial class PlanShowStep(
     [PersistentState(nameof(PlanShowStepState), WellKnownGrainStorageProviders.JobSteps)] IPersistentState<PlanShowStepState> state,
     IJobStepThrottle throttle,
     ILogger<PlanShowStep> logger,
@@ -133,16 +133,35 @@ public class PlanShowStep(
         // A stored plan is the source of truth - seeded demos arrive with their plan already on
         // disk, and a crashed planning job must not re-ask the model on resume. Re-planning is an
         // explicit request (ShowPlanningRequested), never automatic.
-        var planJson = ShowArtifactStore.ReadTextOrNull(artifactStore.PlanJson(showId));
-        if (planJson is null)
-        {
-            planJson = await AskTheModel(currentState, services, cancellationToken);
-            ShowArtifactStore.WriteText(artifactStore.PlanJson(showId), planJson);
-        }
+        // A model call that never returns must become a failed job, not an eternal "running":
+        // five minutes is generous for resolve + one planning completion + the append.
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromMinutes(5));
 
-        var stored = ShowPlanner.Deserialize(planJson) ?? throw new ShowPlanningFailed("The stored plan could not be read.");
-        await JobStepAppender.Append(this, chronicleClient, showId.Value, new ShowPlanned(stored.Title, planJson));
-        return JobStepResult.Succeeded();
+        try
+        {
+            var planJson = ShowArtifactStore.ReadTextOrNull(artifactStore.PlanJson(showId));
+            if (planJson is null)
+            {
+                planJson = await AskTheModel(currentState, services, timeout.Token);
+                ShowArtifactStore.WriteText(artifactStore.PlanJson(showId), planJson);
+            }
+
+            var stored = ShowPlanner.Deserialize(planJson) ?? throw new ShowPlanningFailed("The stored plan could not be read.");
+            await JobStepAppender.Append(this, chronicleClient, showId.Value, new ShowPlanned(stored.Title, planJson));
+            return JobStepResult.Succeeded();
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            const string Message = "Planning did not finish within five minutes - the model or the provider did not answer. Check the provider under settings and try again.";
+            await JobStepAppender.ReportFailure(this, chronicleClient, showId.Value, "plan", new ShowPlanningFailed(Message), logger);
+            return JobStepResult.Failed(Message);
+        }
+        catch (Exception exception)
+        {
+            var message = await JobStepAppender.ReportFailure(this, chronicleClient, showId.Value, "plan", exception, logger);
+            return JobStepResult.Failed(message);
+        }
     }
 
     /// <inheritdoc/>
@@ -157,18 +176,37 @@ public class PlanShowStep(
                 "No AI provider was chosen for this show. Pick one in the generate dialog, or add one under settings.");
         }
 
+        LogResolvingProvider(logger, currentState.ShowId, currentState.AIProviderId);
         var readModels = services.GetRequiredService<IReadModels>();
-        var provider = await readModels.GetInstanceById<ConfiguredAIProvider>((EventSourceId)currentState.AIProviderId)
+        var provider = (await readModels.GetInstanceById<ConfiguredAIProvider>((EventSourceId)currentState.AIProviderId).WaitAsync(cancellationToken))
             ?? throw new AiNotConfigured($"The AI provider this show was created with ({currentState.AIProviderId}) no longer exists. Pick another under settings.");
 
         var (system, user) = ShowPlanner.BuildPrompt(currentState.Description, currentState.TargetDurationSeconds, currentState.Tone, currentState.Audience);
-        var resolved = AIChatClientFactory.Create(provider.Type, provider.ApiKey, provider.Endpoint, provider.Model)
+
+        // The provider itself rarely names a model - resolve the vendor's default explicitly and
+        // carry it on the options too: the Anthropic client ignores the client-level default.
+        var modelId = AIChatClientFactory.ResolveModelId(provider.Type, provider.Model);
+        var resolved = AIChatClientFactory.Create(provider.Type, provider.ApiKey, provider.Endpoint, modelId)
             ?? throw new AiNotConfigured("The chosen AI provider could not be reached for chat completions.");
+        LogAskingModel(logger, currentState.ShowId, resolved.ModelId, provider.ApiKey?.Value?.Length ?? 0);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var response = await resolved.Client.GetResponseAsync(
             [new(ChatRole.System, system), new(ChatRole.User, user)],
+            new ChatOptions { ModelId = resolved.ModelId },
             cancellationToken: cancellationToken);
+        stopwatch.Stop();
+        LogModelAnswered(logger, currentState.ShowId, stopwatch.Elapsed.TotalSeconds.ToString("F1"), response.Text?.Length ?? 0);
         var answer = response.Text ?? string.Empty;
         var plan = ShowPlanner.Parse(answer);
         return ShowPlanner.Serialize(plan);
     }
+
+    [LoggerMessage(0, LogLevel.Information, "Planning show {ShowId}: resolving provider {ProviderId}")]
+    static partial void LogResolvingProvider(ILogger logger, string showId, string providerId);
+
+    [LoggerMessage(1, LogLevel.Information, "Planning show {ShowId}: asking {Model} ({KeyLength} chars of key)")]
+    static partial void LogAskingModel(ILogger logger, string showId, string model, int keyLength);
+
+    [LoggerMessage(2, LogLevel.Information, "Planning show {ShowId}: model answered in {Seconds}s with {Length} chars")]
+    static partial void LogModelAnswered(ILogger logger, string showId, string seconds, int length);
 }

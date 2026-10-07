@@ -17,6 +17,10 @@ var mongodb = builder.AddCratisChronicleMongoDB(imageTag: "7.0");
 // is exactly mongodb://localhost:27017/?directConnection=true, same as appsettings defaults.
 var mongodbServer = builder.Resources.OfType<ContainerResource>().Single(_ => _.Name == "mongodb-server");
 builder.CreateResourceBuilder(mongodbServer).WithEndpoint("tcp", endpoint => endpoint.Port = 27017);
+// A named volume so the event store, read models and configured providers survive an AppHost
+// restart - an anonymous volume dies with the container, and every restart then wiped every
+// provider and show the user had. The seeder is idempotent, so a populated store is safe.
+builder.CreateResourceBuilder(mongodbServer).WithVolume("motion-mongodb-data", "/data/db");
 
 // Chronicle - the slim development image against the MongoDB above, pinned to the same version the
 // Cratis.Chronicle client package is pinned to in Directory.Packages.props. The two are a lockstep

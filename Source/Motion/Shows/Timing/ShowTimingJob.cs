@@ -89,7 +89,8 @@ public class TimeShowStep(
     protected override async Task<Catch<JobStepResult>> PerformStep(TimeShowStepState currentState, CancellationToken cancellationToken)
     {
         var showId = ShowId.From(Guid.Parse(currentState.ShowId));
-
+        try
+        {
         await using var scope = scopeFactory.CreateAsyncScope();
         var services = scope.ServiceProvider;
         var transcriber = services.GetRequiredService<ISpeechTranscriber>();
@@ -129,6 +130,12 @@ public class TimeShowStep(
 
         await JobStepAppender.Append(this, chronicleClient, showId.Value, new ShowTimed(lyricsJson));
         return JobStepResult.Succeeded();
+        }
+        catch (Exception exception)
+        {
+            var message = await JobStepAppender.ReportFailure(this, chronicleClient, showId.Value, "time", exception, logger);
+            return JobStepResult.Failed(message);
+        }
     }
 
     /// <inheritdoc/>
