@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <OutputType>Exe</OutputType>
+        <CratisProxiesOutputPath>$(MSBuildThisFileDirectory).frontend/Api</CratisProxiesOutputPath>
+        <CratisProxiesSegmentsToSkip>1</CratisProxiesSegmentsToSkip>
+        <CratisProxiesSkipOutputDeletion>true</CratisProxiesSkipOutputDeletion>
+        <CratisProxiesSkipCommandNameInRoute>true</CratisProxiesSkipCommandNameInRoute>
+        <AssemblyName>Motion</AssemblyName>
+        <RootNamespace>Motion</RootNamespace>
+        <InvariantGlobalization>true</InvariantGlobalization>
+        <NoWarn>$(NoWarn);CS1591;CS7022</NoWarn>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Cratis" Version="22.51.0" />
+        <PackageReference Include="Cratis.Chronicle" Version="19.33.3" />
+        <PackageReference Include="Cratis.Arc.MongoDB" Version="22.51.0" />
+        <PackageReference Include="Cratis.Arc.Swagger" Version="22.51.0" />
+        <PackageReference Include="Cratis.Arc.ProxyGenerator.Build" Version="22.51.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Motion.Specs" />
+    </ItemGroup>
+
+    <Target Name="CopyEnginePreview" AfterTargets="Build" Condition="Exists('../../engine/dist/preview/index.html')">
+        <ItemGroup>
+            <EnginePreviewFiles Include="../../engine/dist/preview/**/*" />
+        </ItemGroup>
+        <Message Importance="high" Text="Copying motion-engine preview into wwwroot/preview" />
+        <RemoveDir Directories="$(MSBuildThisFileDirectory)wwwroot/preview" />
+        <Copy
+            SourceFiles="@(EnginePreviewFiles)"
+            DestinationFiles="@(EnginePreviewFiles->'$(MSBuildThisFileDirectory)wwwroot/preview/%(RecursiveDir)%(Filename)%(Extension)')"
+            SkipUnchangedFiles="true" />
+    </Target>
+</Project>

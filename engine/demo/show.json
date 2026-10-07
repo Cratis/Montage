@@ -1,0 +1,81 @@
+{
+  "id": "demo",
+  "title": "Motion as Code",
+  "description": "A demo show rendered from a pure spec — no voiceover, fixed windows.",
+  "width": 1920,
+  "height": 1080,
+  "fps": 60,
+  "voiceover": null,
+  "duration": 37.0,
+  "brand": { "name": "Cratis", "product": "Motion" },
+  "scenes": [
+    {
+      "id": "open",
+      "type": "title",
+      "start": 0, "end": 6.5,
+      "transitionIn": "cut",
+      "caption": { "fig": "01", "text": "describe it once" },
+      "params": { "kicker": "motion as code", "headline": "Describe it once. Get a video.", "emphasis": "once" }
+    },
+    {
+      "id": "flow",
+      "type": "flow",
+      "start": 6.5, "end": 13.5,
+      "transitionIn": "wipe",
+      "caption": { "fig": "02", "text": "the pipeline" },
+      "params": {
+        "headline": "One pipeline, five moves",
+        "nodes": [
+          { "label": "Describe", "sub": "one prompt" },
+          { "label": "Plan", "sub": "story + script" },
+          { "label": "Voice", "sub": "self-hosted TTS" },
+          { "label": "Time", "sub": "word alignment" },
+          { "label": "Render", "sub": "deterministic" }
+        ]
+      }
+    },
+    {
+      "id": "metric",
+      "type": "metric",
+      "start": 13.5, "end": 19.5,
+      "transitionIn": "rise",
+      "caption": { "fig": "03", "text": "identical output" },
+      "params": { "value": 60, "format": "number", "label": "frames per second, every one a pure function of time", "delta": "0 drift" }
+    },
+    {
+      "id": "steps",
+      "type": "steps",
+      "start": 19.5, "end": 26.5,
+      "transitionIn": "slide",
+      "caption": { "fig": "04", "text": "how a scene is told" },
+      "params": {
+        "headline": "Scenes lock to the voice",
+        "steps": [
+          { "title": "The script is spoken", "text": "self-hosted text-to-speech" },
+          { "title": "Words get timestamps", "text": "forced alignment" },
+          { "title": "Cuts sit in the pauses", "text": "like a picture editor" }
+        ]
+      }
+    },
+    {
+      "id": "compare",
+      "type": "compare",
+      "start": 26.5, "end": 32.5,
+      "transitionIn": "crossfade",
+      "caption": { "fig": "05", "text": "why code" },
+      "params": {
+        "headline": "Keyframes vs a function of time",
+        "left": { "title": "Keyframes", "points": ["hundreds of handles", "every edit is manual", "timing is hand-placed"] },
+        "right": { "title": "Code", "points": ["deterministic frames", "edits are parameters", "timing follows the voice"] },
+        "verdict": "Change the read, and the picture follows."
+      }
+    },
+    {
+      "id": "end",
+      "type": "endcard",
+      "start": 32.5, "end": 37.0,
+      "transitionIn": "crossfade",
+      "params": { "headline": "Make motion like this", "cta": "cratis.io", "brandName": "Cratis", "product": "Motion" }
+    }
+  ]
+}

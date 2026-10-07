@@ -1,0 +1,15 @@
+bin/
+obj/
+artifacts/
+out/
+dist/
+node_modules/
+wwwroot/
+*.user
+.vs/
+.idea/
+.DS_Store
+workspace/
+.yarn/
+yarn.lock
+package-lock.json

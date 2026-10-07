@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0",
+  "harnesses": [
+    "claude"
+  ],
+  "profiles": [
+    "cratis/application"
+  ],
+  "languages": [
+    "csharp",
+    "typescript"
+  ]
+}

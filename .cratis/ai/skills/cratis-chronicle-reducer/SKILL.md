@@ -1,0 +1,206 @@
+---
+name: cratis-chronicle-reducer
+description: Write a Chronicle IReducerFor<T> when model-bound projection attributes and the fluent IProjectionFor<T> builder cannot express a read-model state transition. Covers the admission test, the exact accepted method signatures, the nullable-current requirement, deletion, passivity and event filtering. Use only after the projection options are genuinely exhausted; do not use for ordinary event-to-property mapping.
+license: MIT
+---
+<!-- cratis-ai-managed: skills/cratis-chronicle-reducer/SKILL.md -->
+
+# Chronicle reducers
+
+A reducer builds a read model as "current state plus event produces next state",
+with real C# control flow. It is the **last resort** on the projection ladder,
+not a default. A reducer that could have been a projection is a projection that
+was never written, and it will be flagged for conversion in review.
+
+## Verified product sources
+
+This skill is verified against this exact source:
+
+| Package | Version | Purpose |
+| --- | --- | --- |
+| `Cratis.Chronicle` | `18.3.0` | `Cratis.Chronicle.Reducers`, `Cratis.Chronicle.ReadModels`, `Cratis.Chronicle.Events` |
+
+Reverify product sources before claiming support for another version.
+
+## Admission test — all three must hold
+
+1. **Model-bound attributes cannot express it.** Not `[FromEvent<T>]`,
+   `[SetFrom<T>]`, `[SetValue<T>]`, `[SetFromContext<T>]`, `[AddFrom<T>]`,
+   `[SubtractFrom<T>]`, `[ChildrenFrom<T>]`, `[Join<T>]`, `[RemovedWith<T>]`,
+   `[RemovedWithJoin<T>]`, `[Nested]`, `[ClearWith<T>]`, `[Increment<T>]`,
+   `[Decrement<T>]`, `[Count<T>]`, `[FromAll]`, or `[FromEvery]`.
+2. **The fluent `IProjectionFor<T>` builder cannot express it.** Not
+   `UsingKey`, `UsingKeyFromContext`, `UsingParentKey`, `UsingCompositeKey`,
+   `UsingConstantKey`, `Join`, `Children`, `Nested`, `WithInitialValues`,
+   `NotRewindable`, or a `Set(...).To(...)` form.
+3. **The remainder needs real control flow** — branching on prior state, loops,
+   or an accumulation the declarative APIs have no operator for.
+
+If all three hold, write the reducer and carry an inline justification naming the
+specific limitation that ruled out a projection.
+
+```csharp
+using Cratis.Chronicle.Events;
+using Cratis.Chronicle.Reducers;
+
+// Reducer required: the next value depends on the prior value through a
+// per-event rule that no counter or projection operator expresses.
+public class <ReadModelName>Reducer : IReducerFor<<ReadModelName>>
+{
+    public <ReadModelName> <Opened>(<OpenedEvent> @event, <ReadModelName>? current, EventContext context) =>
+        new(<initialValue>, context.Occurred);
+
+    public <ReadModelName> <Changed>(<ChangedEvent> @event, <ReadModelName>? current) =>
+        current is null
+            ? new(<initialValue>, default)
+            : current with { <Property> = <computedFrom(current, @event)> };
+}
+```
+
+`IReducerFor<TReadModel>` is a marker with no members, constrained to
+`where TReadModel : class`.
+
+## Preserve admission and ordering when converting
+
+A handler that ends with `current with { Status = ... }` is not necessarily a
+plain setter. First inspect guards: does it require a creation event, ignore an
+older attempt, preserve a terminal state, or compare prior values? Replacing it
+with unconditional `[SetValue<T>]` can create state too early or resurrect a
+finished entity. Keep the reducer when the projection APIs cannot express those
+semantics; the admission test is about behavior, not handler length.
+
+Evaluate variants for mutually exclusive lifecycle shapes (see the projection
+skill). Their non-entering events are update-only, but that does not replace
+arbitrary guards on attempt identity, ordering, or prior state. Before conversion,
+keep specifications for update-before-create, late events after completion,
+repeated events, and each guarded branch, as applicable. Assert the same outcomes
+with the replacement, not only the happy-path final status.
+
+## Method signatures — exactly what is accepted
+
+Dispatch is by the **first parameter's type**, never by the method name. Name the
+method for the reader.
+
+| Signature | Meaning |
+| --- | --- |
+| `TReadModel M(TEvent @event, TReadModel? current)` | next state, computed synchronously |
+| `TReadModel M(TEvent @event, TReadModel? current, EventContext context)` | same, with event metadata |
+| `Task<TReadModel> M(...)` | the same two shapes, asynchronously |
+| returns `TReadModel?` / `Task<TReadModel?>` / bare `Task` | see deletion below |
+
+The rules the invoker enforces:
+
+- **The current-state parameter must be declared nullable.** A non-nullable
+  `TReadModel current` **throws** when the reducer's methods are indexed. This
+  is not a silent skip; it fails.
+- At most three parameters. If a third is present it must be exactly
+  `Cratis.Chronicle.Events.EventContext`.
+- Public and non-public instance methods are both scanned, and **one method wins
+  per event type** — do not write two handlers for the same event.
+- Return the complete next state. Never mutate `current` in place; use `with { }`.
+- The reducer must be **stateless**. Do not hold mutable state on the class.
+
+### Returning null deletes the instance
+
+A `null` return — and equally a bare `Task` return — sets the read-model state
+to null, which removes the instance. That is the deletion mechanism, so do not
+reach for `null` to mean "ignore this event". To ignore an event, return
+`current` unchanged.
+
+**Do not throw to skip an event.** A throw fails the event-source partition and
+stops the reducer for that partition until an operator intervenes.
+
+`current` is `null` on the first event for a given event source. For a model
+seeded by one event and then updated by many, decide deliberately what an update
+arriving before its seed should do — returning `null` keeps replay and
+specification ordering honest, returning a synthesized instance hides an ordering
+bug.
+
+## Identity, passivity, and event sequence
+
+`Cratis.Chronicle.Reducers.ReducerAttribute` takes three arguments, all
+optional:
+
+```csharp
+public sealed class ReducerAttribute(string id = "", string? eventSequence = default, bool isActive = true)
+```
+
+- `id` overrides the generated reducer identity.
+- `eventSequence` selects the source sequence.
+- `isActive: false` makes this one reducer passive.
+
+`Cratis.Chronicle.ReadModels.PassiveAttribute` (`[Passive]`) goes on the **read
+model type** and makes it passive as a whole: no sink, nothing materialized, and
+the instance is computed on demand when it is read. Reach for it when a
+command-side decision needs the model strongly consistent at the moment it is
+read.
+
+## Filtering which events reach the reducer
+
+Three attributes genuinely filter a reducer's input, and they correspond to
+metadata supplied at append time:
+
+| Attribute | Filters on |
+| --- | --- |
+| `[FilterEventsByTag("<tag>")]` | an appended tag; repeatable, and any one match admits the event |
+| `[EventSourceType("<value>")]` | the appended event source type |
+| `[EventStreamType("<value>")]` | the appended event stream type |
+
+`[Tag]` and `[Tags]` **label** the artifact; they do not filter. Note also that a
+**projection cannot be filtered at all** — its definition has no field for it.
+When you need metadata-based selection, a reducer or a reactor is where it can
+happen.
+
+The matching append supplies that metadata:
+
+```csharp
+await eventStore.EventLog.Append(
+    <eventSourceId>,
+    new <EventName>(<arguments>),
+    eventStreamType: "<stream-type>",
+    eventSourceType: "<source-type>",
+    tags: ["<tag>"]);
+```
+
+Mind the parameter order on `Append`: `eventStreamType` comes before
+`eventStreamId`, which comes before `eventSourceType`.
+
+## Specifications
+
+Start with `Specification` plus a direct call for pure reducer decisions:
+pass the event and current state explicitly and assert the returned next state.
+Add `ReadModelScenario<TReadModel>` only where event dispatch, filtering,
+metadata or read-model wiring contribute proof; drive the event sequence and
+assert on the resulting instance there. Cover, at minimum:
+
+- the first event, where `current` is `null`;
+- accumulation across several events on one event source;
+- every branch the reducer actually has;
+- deletion, if the reducer ever returns `null`.
+
+## Route near misses
+
+- An accepted `.play` model under the model root covers the behavior, or the
+  repository is opted in (the root holds a committed `.play` file (`git ls-tree -r --name-only HEAD` lists a `.play` file there, narrowed to `-- <root>` when a root is configured), or the project set
+  `mcpServers.screenplay.root` in `.cratis/ai.json`; an empty directory, install
+  output, an uncommitted `.play` draft or a `.play` file outside the root does not count; master definition:
+  `cratis-screenplay-modeling-lifecycle`): change the model first with
+  `cratis-screenplay-event-modeling`. If the Screenplay skills are not installed,
+  say so and do not author `.play` from memory.
+  Edit code here only for infrastructure, clients, adapters, Screenplay code
+  attachments, or gap-fill scope (`cratis-screenplay-render-and-gap-fill`);
+  never edit Stage-managed output.
+
+## Verify
+
+- The admission test is satisfied and the justification names the specific
+  limitation.
+- The current-state parameter is nullable on every handler method.
+- No handler method has more than three parameters, and any third is
+  `EventContext`.
+- Exactly one handler exists per event type.
+- The reducer holds no mutable state and never mutates `current`.
+- `null` is returned only where deletion is intended.
+- No handler throws to skip an event.
+- The project builds clean and the read-model specifications pass against the
+  verified package version.

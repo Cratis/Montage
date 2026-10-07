@@ -1,0 +1,21 @@
+{
+  "name": "motion-engine",
+  "version": "0.1.0",
+  "description": "Deterministic motion-graphics render engine. Scenes are pure functions of time; the browser preview and the exported MP4 are identical.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite --port 5173",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "render": "node scripts/render.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.0",
+    "@types/ws": "^8.18.0",
+    "playwright-core": "^1.63.0",
+    "typescript": "^5.9.0",
+    "vite": "^8.3.0",
+    "ws": "^8.21.0"
+  }
+}
