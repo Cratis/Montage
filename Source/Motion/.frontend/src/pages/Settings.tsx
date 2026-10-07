@@ -29,9 +29,13 @@ const typeLabel = (type: AIProviderType) =>
  */
 export function SettingsDialog({ visible, onHide }: { visible: boolean; onHide: () => void }) {
     const [providers] = AllAIProviders.use();
-    const [addOpenAI, setOpenAIValues, clearOpenAI] = AddOpenAICompatibleProvider.use();
-    const [addAnthropic, setAnthropicValues, clearAnthropic] = AddAnthropicProvider.use();
-    const [remove] = RemoveAIProvider.use();
+    // the server requires maxConcurrentJobs - without it the add fails validation silently
+    const [addOpenAI, setOpenAIValues, clearOpenAI] = AddOpenAICompatibleProvider.use({ maxConcurrentJobs: 4 });
+    const [addAnthropic, setAnthropicValues, clearAnthropic] = AddAnthropicProvider.use({ maxConcurrentJobs: 4 });
+    const [remove, setRemoveValues] = RemoveAIProvider.use();
+    // the npm proxy routes removal without the command name; the server registers it with
+    // - without this the remove button 405s silently
+    (remove as unknown as { route: string }).route = '/api/a-i/providers/removing/remove-a-i-provider';
     const [kind, setKind] = useState<'openai-compatible' | 'anthropic'>('openai-compatible');
     const [busy, setBusy] = useState(false);
     const [addError, setAddError] = useState<string>('');
@@ -54,13 +58,16 @@ export function SettingsDialog({ visible, onHide }: { visible: boolean; onHide: 
                 ].filter((m) => !!m);
                 setAddError(problems.length > 0 ? problems.join('; ') : 'The provider was not added.');
             }
+        } catch (error) {
+            setAddError(String((error as Error)?.message ?? error));
         } finally {
             setBusy(false);
         }
     };
 
     const removeProvider = async (id: string) => {
-        await remove.execute(id as any);
+        setRemoveValues({ provider: id as never });
+        await remove.execute();
     };
 
     const canAdd = kind === 'openai-compatible'
@@ -141,6 +148,22 @@ export function SettingsDialog({ visible, onHide }: { visible: boolean; onHide: 
                             type='password'
                             value={addAnthropic.apiKey ?? ''}
                             onChange={(e) => setAnthropicValues({ apiKey: e.target.value })} />
+                    )}
+                    <label className='block'>
+                        <span className='eyebrow block mb-1.5'>Max concurrent jobs (0 = no limit)</span>
+                        <input
+                            className='w-full panel px-3 py-2 text-sm outline-none focus:border-[var(--cr-motion-violet)] bg-transparent mono'
+                            type='number'
+                            min={0}
+                            value={kind === 'openai-compatible' ? addOpenAI.maxConcurrentJobs ?? 4 : addAnthropic.maxConcurrentJobs ?? 4}
+                            onChange={(e) => {
+                                const value = Math.max(0, Number(e.target.value) || 0);
+                                if (kind === 'openai-compatible') setOpenAIValues({ maxConcurrentJobs: value });
+                                else setAnthropicValues({ maxConcurrentJobs: value });
+                            }} />
+                    </label>
+                    {addError && (
+                        <div className='text-xs text-[#e5484d]'>{addError}</div>
                     )}
                     <div className='flex justify-end'>
                         <Button
