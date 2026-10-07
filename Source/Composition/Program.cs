@@ -10,6 +10,14 @@ var builder = DistributedApplication.CreateBuilder(args);
 // Docker Desktop VMs run, and Chronicle then crashes on its missing store.
 var mongodb = builder.AddCratisChronicleMongoDB(imageTag: "7.0");
 
+// Pin the host port to match the replica set's own member name (the entrypoint initiates rs0
+// as localhost:27017, the container's internal port). Without this the container gets a random
+// host port, the editor's MongoDB client on the host races a member name it cannot reach, and
+// every read-model query times out on a cold boot. Fixed port = the injected connection string
+// is exactly mongodb://localhost:27017/?directConnection=true, same as appsettings defaults.
+var mongodbServer = builder.Resources.OfType<ContainerResource>().Single(_ => _.Name == "mongodb-server");
+builder.CreateResourceBuilder(mongodbServer).WithEndpoint("tcp", endpoint => endpoint.Port = 27017);
+
 // Chronicle - the slim development image against the MongoDB above, pinned to the same version the
 // Cratis.Chronicle client package is pinned to in Directory.Packages.props. The two are a lockstep
 // pair: the client validates the kernel's whole service surface on connect, so a floating tag can
@@ -21,7 +29,10 @@ var chronicle = builder
     .AddContainer("chronicle", "cratis/chronicle", "19.33.3-development-slim")
     .WithEndpoint(port: 35000, targetPort: 35000, name: "grpc")
     .WithEnvironment("Cratis__Chronicle__Storage__Type", "MongoDB")
-    .WithEnvironment(context => context.EnvironmentVariables["Cratis__Chronicle__Storage__ConnectionDetails"] = mongodb.Resource.ConnectionStringExpression);
+    .WithEnvironment(context => context.EnvironmentVariables["Cratis__Chronicle__Storage__ConnectionDetails"] = mongodb.Resource.ConnectionStringExpression)
+    // The pipeline's stages legitimately run long (a render takes minutes) and always answer —
+    // success or a failure event — so the subscriber waits indefinitely instead of timing out.
+    .WithEnvironment("Cratis__Chronicle__Observers__SubscriberTimeout", "0");
 
 // Chronicle takes a while to come up (patches, authentication setup). The client does not fully
 // recover a command pipeline that raced a failed first connection, so gate the editor on the kernel
@@ -39,6 +50,15 @@ var chronicleReady = builder
 var tts = builder
     .AddContainer("tts", "ghcr.io/remsky/kokoro-fastapi-cpu", "v0.9.0")
     .WithEndpoint(port: 8880, targetPort: 8880, name: "http");
+
+// Kokoro loads its model lazily on the first speech request, and the first requests after a
+// container start can come back near-silent — so gate the editor on a warm-up synthesis (the
+// same trick as chronicle-ready, with the side effect that the model is resident before the
+// first real scene is spoken).
+var ttsReady = builder
+    .AddContainer("tts-ready", "curlimages/curl", "8.10.1")
+    .WithArgs("sh", "-c", "until curl -sf -m 30 -X POST http://tts:8880/v1/audio/speech -H 'Content-Type: application/json' -d '{\"model\":\"kokoro\",\"input\":\"ready\",\"voice\":\"af_heart\",\"response_format\":\"wav\",\"stream\":false}' -o /dev/null; do sleep 2; done")
+    .WaitFor(tts);
 
 var stt = builder
     .AddContainer("stt", "ghcr.io/speaches-ai/speaches", "0.9.0-rc.3-cpu")
@@ -64,7 +84,8 @@ builder
     .WaitFor(tts)
     .WaitFor(stt)
     .WaitFor(chronicle)
-    .WaitForCompletion(chronicleReady);
+    .WaitForCompletion(chronicleReady)
+    .WaitForCompletion(ttsReady);
 
 frontend.WaitFor(chronicle);
 

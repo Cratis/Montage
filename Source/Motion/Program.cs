@@ -13,6 +13,7 @@ builder.Services.AddOptions<MotionOptions>().BindConfiguration("Cratis:Motion").
 builder.Services.AddSingleton<Motion.Shows.Packaging.IShowPackager, Motion.Shows.Packaging.ShowPackager>();
 builder.Services.AddSingleton<Motion.Shows.Packaging.IFfmpeg, Motion.Shows.Packaging.Ffmpeg>();
 builder.Services.AddSingleton<Motion.Shows.Rendering.IVideoRenderer, Motion.Shows.Rendering.EngineRenderer>();
+builder.Services.AddSingleton<Motion.Shows.Production.PipelineStageExecutor>();
 builder.Services.AddSingleton<Motion.Speech.ISpeechSynthesizer, Motion.Speech.SpeechSynthesizer>();
 builder.Services.AddSingleton<Motion.Speech.ISpeechTranscriber, Motion.Speech.SpeechTranscriber>();
 

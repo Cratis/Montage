@@ -14,9 +14,11 @@ namespace Motion.Shows.Rendering;
 /// </summary>
 /// <param name="renderer">The video renderer.</param>
 /// <param name="artifactStore">The artifact store.</param>
+/// <param name="stages">The stage executor (a render runs minutes; the reactor acks immediately).</param>
 public sealed class ShowRenderReactor(
     IVideoRenderer renderer,
-    ShowArtifactStore artifactStore) : IReactor
+    ShowArtifactStore artifactStore,
+    PipelineStageExecutor stages) : IReactor
 {
     /// <summary>
     /// Renders when the package is ready.
@@ -24,12 +26,15 @@ public sealed class ShowRenderReactor(
     /// <param name="event">The packaging completion.</param>
     /// <param name="context">The event context.</param>
     /// <returns>The render completion.</returns>
-    public Task<IEnumerable<object>> On(ShowPackaged @event, EventContext context) =>
-        PipelineStage.Run(context, "rendering", async () =>
+    public Task On(ShowPackaged @event, EventContext context)
+    {
+        stages.Begin(context, "rendering", async () =>
         {
             var video = await Render(ShowId.From(context.EventSourceId), @event.PackageDirectory);
             return new RenderCompleted(video.RelativePath, video.DurationSeconds, video.SizeBytes);
         });
+        return Task.CompletedTask;
+    }
 
     /// <summary>
     /// Re-renders when the user asks for it.
@@ -37,8 +42,9 @@ public sealed class ShowRenderReactor(
     /// <param name="event">The request.</param>
     /// <param name="context">The event context.</param>
     /// <returns>The render completion.</returns>
-    public Task<IEnumerable<object>> On(RenderRequested @event, EventContext context) =>
-        PipelineStage.Run(context, "rendering", async () =>
+    public Task On(RenderRequested @event, EventContext context)
+    {
+        stages.Begin(context, "rendering", async () =>
         {
             var showId = ShowId.From(context.EventSourceId);
             var packageDirectory = artifactStore.PackageDirectory(showId);
@@ -49,6 +55,8 @@ public sealed class ShowRenderReactor(
             var video = await Render(showId, packageDirectory);
             return new RenderCompleted(video.RelativePath, video.DurationSeconds, video.SizeBytes);
         });
+        return Task.CompletedTask;
+    }
 
     async Task<(string RelativePath, double DurationSeconds, long SizeBytes)> Render(ShowId showId, string packageDirectory)
     {

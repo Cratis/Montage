@@ -22,10 +22,12 @@ namespace Motion.Shows.Planning;
 /// <param name="languageModel">The language model.</param>
 /// <param name="artifactStore">The artifact store.</param>
 /// <param name="shows">The show listing collection (for re-plans, where the original request lives in the read model).</param>
+/// <param name="stages">The stage executor (planning can take minutes; the reactor acks immediately).</param>
 public sealed class ShowPlannerReactor(
     ILanguageModel languageModel,
     ShowArtifactStore artifactStore,
-    IMongoCollection<Show> shows) : IReactor
+    IMongoCollection<Show> shows,
+    PipelineStageExecutor stages) : IReactor
 {
     /// <summary>
     /// Plans the show when it is created.
@@ -33,12 +35,27 @@ public sealed class ShowPlannerReactor(
     /// <param name="event">The creation event with the description.</param>
     /// <param name="context">The event context.</param>
     /// <returns>The planning completion.</returns>
-    public Task<IEnumerable<object>> On(ShowCreated @event, EventContext context) =>
-        PipelineStage.Run(context, "planning", async () =>
+    public Task On(ShowCreated @event, EventContext context)
+    {
+        stages.Begin(context, "planning", async () =>
         {
+            var showId = ShowId.From(context.EventSourceId);
+
+            // A stored plan is the source of truth — seeded demos arrive with their plan already
+            // on disk, and a crashed planning stage must not re-ask the model on redelivery.
+            // Re-planning is an explicit request (ShowPlanningRequested), never automatic.
+            var existing = ShowArtifactStore.ReadTextOrNull(artifactStore.PlanJson(showId));
+            if (existing is not null)
+            {
+                var stored = ShowPlanner.Deserialize(existing) ?? throw new ShowPlanningFailed("The stored plan could not be read.");
+                return new ShowPlanned(stored.Title, existing);
+            }
+
             var plan = await Plan(context.EventSourceId, @event.Description, @event.TargetDurationSeconds, @event.Tone, @event.Audience);
             return new ShowPlanned(plan.Title, ShowPlanner.Serialize(plan));
         });
+        return Task.CompletedTask;
+    }
 
     /// <summary>
     /// Plans the show when a re-plan is requested — the description comes from the read model.
@@ -46,14 +63,17 @@ public sealed class ShowPlannerReactor(
     /// <param name="event">The request.</param>
     /// <param name="context">The event context.</param>
     /// <returns>The planning completion.</returns>
-    public Task<IEnumerable<object>> On(ShowPlanningRequested @event, EventContext context) =>
-        PipelineStage.Run(context, "planning", async () =>
+    public Task On(ShowPlanningRequested @event, EventContext context)
+    {
+        stages.Begin(context, "planning", async () =>
         {
             var show = await shows.Find(s => s.Id == ShowId.From(context.EventSourceId)).FirstOrDefaultAsync()
                 ?? throw new ShowPlanningFailed("The show could not be found for re-planning.");
             var plan = await Plan(context.EventSourceId, show.Description, show.TargetDurationSeconds, show.Tone, show.Audience);
             return new ShowPlanned(plan.Title, ShowPlanner.Serialize(plan));
         });
+        return Task.CompletedTask;
+    }
 
     async Task<ShowPlan> Plan(EventSourceId eventSourceId, string description, double targetDuration, string tone, string audience)
     {

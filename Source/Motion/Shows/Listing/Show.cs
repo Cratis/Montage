@@ -88,6 +88,7 @@ public class ShowProjection : IProjectionFor<Show>
             .Set(x => x.Status).ToValue("Voicing"))
         .From<VoiceoverSynthesized>(_ => _
             .Set(x => x.Status).ToValue("Voiced")
+            .Set(x => x.AudioDurationSeconds).To(e => e.DurationSeconds)
             .Set(x => x.Error).ToValue(string.Empty))
         .From<ShowTimingRequested>(_ => _
             .Set(x => x.Status).ToValue("Timing"))

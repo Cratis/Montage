@@ -2,9 +2,10 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.Text.Json;
-
 using Cratis.Chronicle.Observation;
+using MongoDB.Driver;
 using Motion.AI;
+using Motion.Shows.Listing;
 using Motion.Shows.Packaging;
 using Motion.Shows.Planning;
 using Motion.Shows.Production;
@@ -20,10 +21,14 @@ namespace Motion.Shows.Voiceover;
 /// <param name="synthesizer">The text-to-speech client.</param>
 /// <param name="ffmpeg">ffmpeg, when present.</param>
 /// <param name="artifactStore">The artifact store.</param>
+/// <param name="shows">The show listing collection (for the per-show voice).</param>
+/// <param name="stages">The stage executor (synthesis runs minutes; the reactor acks immediately).</param>
 public sealed class VoiceoverSynthesisReactor(
     ISpeechSynthesizer synthesizer,
     IFfmpeg ffmpeg,
-    ShowArtifactStore artifactStore) : IReactor
+    ShowArtifactStore artifactStore,
+    IMongoCollection<Show> shows,
+    PipelineStageExecutor stages) : IReactor
 {
     const double SceneGapSeconds = 0.45;
 
@@ -33,12 +38,16 @@ public sealed class VoiceoverSynthesisReactor(
     /// <param name="event">The plan.</param>
     /// <param name="context">The event context.</param>
     /// <returns>The voiceover completion.</returns>
-    public Task<IEnumerable<object>> On(ShowPlanned @event, EventContext context) =>
-        PipelineStage.Run(context, "voiceover", async () =>
+    public Task On(ShowPlanned @event, EventContext context)
+    {
+        stages.Begin(context, "voiceover", async () =>
         {
-            var (audioPath, duration) = await Synthesize(ShowId.From(context.EventSourceId), @event.PlanJson);
+            var showId = ShowId.From(context.EventSourceId);
+            var (audioPath, duration) = await Synthesize(showId, @event.PlanJson, await VoiceOf(showId));
             return new VoiceoverSynthesized(audioPath, duration);
         });
+        return Task.CompletedTask;
+    }
 
     /// <summary>
     /// Re-synthesizes when the user asks for it — the plan comes from disk.
@@ -46,16 +55,38 @@ public sealed class VoiceoverSynthesisReactor(
     /// <param name="event">The request.</param>
     /// <param name="context">The event context.</param>
     /// <returns>The voiceover completion.</returns>
-    public Task<IEnumerable<object>> On(VoiceoverSynthesisRequested @event, EventContext context) =>
-        PipelineStage.Run(context, "voiceover", async () =>
+    public Task On(VoiceoverSynthesisRequested @event, EventContext context)
+    {
+        stages.Begin(context, "voiceover", async () =>
         {
             var showId = ShowId.From(context.EventSourceId);
-            var (audioPath, duration) = await Synthesize(showId, ShowArtifactStore.ReadTextOrNull(artifactStore.PlanJson(showId))
-                ?? throw new ShowPlanningFailed("The show has no plan to speak — plan it first."));
+            var planJson = ShowArtifactStore.ReadTextOrNull(artifactStore.PlanJson(showId))
+                ?? throw new ShowPlanningFailed("The show has no plan to speak — plan it first.");
+            var (audioPath, duration) = await Synthesize(showId, planJson, await VoiceOf(showId));
             return new VoiceoverSynthesized(audioPath, duration);
         });
+        return Task.CompletedTask;
+    }
 
-    async Task<(string AudioPath, double Duration)> Synthesize(ShowId showId, string planJson)
+    async Task<string> VoiceOf(ShowId showId)
+    {
+        // On a cold boot the read model can lag the kernel by a few seconds while the MongoDB
+        // replica set finishes electing; retry rather than fail the stage on that race.
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                var show = await shows.Find(s => s.Id == showId).FirstOrDefaultAsync();
+                return show?.Voice ?? string.Empty;
+            }
+            catch (Exception ex) when (attempt < 5 && ex.Message.Contains("timeout occurred", StringComparison.OrdinalIgnoreCase))
+            {
+                await Task.Delay(5000);
+            }
+        }
+    }
+
+    async Task<(string AudioPath, double Duration)> Synthesize(ShowId showId, string planJson, string voice)
     {
         if (!synthesizer.IsEnabled)
         {
@@ -77,7 +108,7 @@ public sealed class VoiceoverSynthesisReactor(
             var spoken = plan.Scenes[i].Spoken.Trim();
             if (spoken.Length == 0) continue;
             var take = Path.Combine(takesFolder, $"scene-{i + 1:00}.wav");
-            await synthesizer.SynthesizeToWav(spoken, take, CancellationToken.None);
+            await synthesizer.SynthesizeToWav(spoken, take, CancellationToken.None, voice);
             takePaths.Add(take);
             spokenScenes.Add((i, spoken));
         }

@@ -16,3 +16,4 @@ package-lock.json
 appsettings.local.json
 .cratis/screenplay/
 .ai-work/
+*.mp4

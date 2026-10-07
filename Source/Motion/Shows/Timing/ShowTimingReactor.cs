@@ -20,9 +20,11 @@ namespace Motion.Shows.Timing;
 /// </summary>
 /// <param name="transcriber">The speech-to-text client.</param>
 /// <param name="artifactStore">The artifact store.</param>
+/// <param name="stages">The stage executor (transcription runs long; the reactor acks immediately).</param>
 public sealed class ShowTimingReactor(
     ISpeechTranscriber transcriber,
-    ShowArtifactStore artifactStore) : IReactor
+    ShowArtifactStore artifactStore,
+    PipelineStageExecutor stages) : IReactor
 {
     /// <summary>
     /// Times the show when the voiceover has been synthesized.
@@ -30,12 +32,15 @@ public sealed class ShowTimingReactor(
     /// <param name="event">The voiceover completion.</param>
     /// <param name="context">The event context.</param>
     /// <returns>The timing completion.</returns>
-    public Task<IEnumerable<object>> On(VoiceoverSynthesized @event, EventContext context) =>
-        PipelineStage.Run(context, "timing", async () =>
+    public Task On(VoiceoverSynthesized @event, EventContext context)
+    {
+        stages.Begin(context, "timing", async () =>
         {
             var lyricsJson = await Time(ShowId.From(context.EventSourceId), @event.DurationSeconds);
             return new ShowTimed(lyricsJson);
         });
+        return Task.CompletedTask;
+    }
 
     /// <summary>
     /// Re-times when the user asks for it.
@@ -43,14 +48,17 @@ public sealed class ShowTimingReactor(
     /// <param name="event">The request.</param>
     /// <param name="context">The event context.</param>
     /// <returns>The timing completion.</returns>
-    public Task<IEnumerable<object>> On(ShowTimingRequested @event, EventContext context) =>
-        PipelineStage.Run(context, "timing", async () =>
+    public Task On(ShowTimingRequested @event, EventContext context)
+    {
+        stages.Begin(context, "timing", async () =>
         {
             var showId = ShowId.From(context.EventSourceId);
             var duration = Wav.ReadDuration(artifactStore.VoiceoverWav(showId));
             var lyricsJson = await Time(showId, duration);
             return new ShowTimed(lyricsJson);
         });
+        return Task.CompletedTask;
+    }
 
     async Task<string> Time(ShowId showId, double audioDuration)
     {

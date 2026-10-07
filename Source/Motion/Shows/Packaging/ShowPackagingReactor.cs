@@ -16,9 +16,11 @@ namespace Motion.Shows.Packaging;
 /// </summary>
 /// <param name="packager">The packager.</param>
 /// <param name="artifactStore">The artifact store.</param>
+/// <param name="stages">The stage executor.</param>
 public sealed class ShowPackagingReactor(
     IShowPackager packager,
-    ShowArtifactStore artifactStore) : IReactor
+    ShowArtifactStore artifactStore,
+    PipelineStageExecutor stages) : IReactor
 {
     /// <summary>
     /// Packages the show when timing is done.
@@ -26,25 +28,31 @@ public sealed class ShowPackagingReactor(
     /// <param name="event">The timing completion.</param>
     /// <param name="context">The event context.</param>
     /// <returns>The packaging completion.</returns>
-    public Task<IEnumerable<object>> On(ShowTimed @event, EventContext context) =>
-        PipelineStage.Run(context, "packaging", () => Package(ShowId.From(context.EventSourceId)));
+    public Task On(ShowTimed @event, EventContext context)
+    {
+        stages.Begin(context, "packaging", () => Package(ShowId.From(context.EventSourceId)));
+        return Task.CompletedTask;
+    }
 
     /// <summary>
     /// Re-packages when the user asks for it.
     /// </summary>
     /// <param name="event">The request.</param>
     /// <param name="context">The event context.</param>
-    /// <returns>The packaging completion.</returns>
-    public Task<IEnumerable<object>> On(ShowPackagingRequested @event, EventContext context) =>
-        PipelineStage.Run(context, "packaging", () =>
+    /// <returns>A completed task.</returns>
+    public Task On(ShowPackagingRequested @event, EventContext context)
+    {
+        stages.Begin(context, "packaging", async () =>
         {
             var showId = ShowId.From(context.EventSourceId);
             if (ShowArtifactStore.ReadTextOrNull(artifactStore.LyricsJson(showId)) is null)
             {
                 throw new SpeechTranscriptionFailed("The show has no timing yet — time it first.");
             }
-            return Package(showId);
+            return await Package(showId);
         });
+        return Task.CompletedTask;
+    }
     Task<ShowPackaged> Package(ShowId showId)
     {
         var planJson = ShowArtifactStore.ReadTextOrNull(artifactStore.PlanJson(showId))

@@ -43,6 +43,9 @@ services:
         environment:
             Cratis__Chronicle__Storage__Type: "MongoDB"
             Cratis__Chronicle__Storage__ConnectionDetails: "mongodb://mongodb:27017/?directConnection=true"
+            # Stages run long (a render takes minutes) and always answer — success or a failure event — so
+            # the subscriber waits indefinitely instead of timing out (0 = indefinite).
+            Cratis__Chronicle__Observers__SubscriberTimeout: "0"
 
     tts:
         # Kokoro-FastAPI - OpenAI-compatible /v1/audio/speech, model baked into the image.

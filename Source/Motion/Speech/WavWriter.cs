@@ -107,7 +107,13 @@ public static class WavWriter
         {
             var chunkId = new string(reader.ReadChars(4));
             var chunkSize = reader.ReadInt32();
-            if (chunkId == "data") return (stream.Position, chunkSize);
+            if (chunkId == "data")
+            {
+                // Streaming WAV writers emit 0xFFFFFFFF (-1) for unknown sizes; the data is
+                // then everything after the header.
+                var length = chunkSize > 0 ? chunkSize : (int)(stream.Length - stream.Position);
+                return (stream.Position, length);
+            }
             stream.Position += chunkSize + (chunkSize & 1);
         }
         throw new InvalidDataException("No data chunk in WAV file.");

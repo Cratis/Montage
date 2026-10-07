@@ -26,8 +26,9 @@ public interface ISpeechSynthesizer
     /// <param name="text">The text to speak.</param>
     /// <param name="destination">Where to write the WAV file.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="voice">Optional voice override; falls back to the configured default.</param>
     /// <returns>Duration of the synthesized audio, in seconds.</returns>
-    Task<double> SynthesizeToWav(string text, string destination, CancellationToken cancellationToken);
+    Task<double> SynthesizeToWav(string text, string destination, CancellationToken cancellationToken, string? voice = null);
 }
 
 /// <summary>
@@ -47,7 +48,7 @@ public sealed partial class SpeechSynthesizer(IOptions<MotionOptions> options, I
     public bool IsEnabled => options.Value.Tts.IsEnabled;
 
     /// <inheritdoc/>
-    public async Task<double> SynthesizeToWav(string text, string destination, CancellationToken cancellationToken)
+    public async Task<double> SynthesizeToWav(string text, string destination, CancellationToken cancellationToken, string? voice = null)
     {
         var tts = options.Value.Tts;
         if (!tts.IsEnabled) throw new SpeechSynthesisFailed("No text-to-speech service is configured.");
@@ -56,7 +57,7 @@ public sealed partial class SpeechSynthesizer(IOptions<MotionOptions> options, I
         using var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
         {
             Content = JsonContent.Create(
-                new SpeechRequest(tts.ModelName, text, tts.Voice, "wav", false),
+                new SpeechRequest(tts.ModelName, text, string.IsNullOrWhiteSpace(voice) ? tts.Voice : voice, "wav", false),
                 options: _jsonOptions),
         };
         if (!string.IsNullOrWhiteSpace(tts.ApiKey))
@@ -71,6 +72,19 @@ public sealed partial class SpeechSynthesizer(IOptions<MotionOptions> options, I
             await response.Content.CopyToAsync(file, cancellationToken);
         }
         var duration = Wav.ReadDuration(destination);
+
+        // A TTS service that is still warming up can return near-silent audio; that is a
+        // failure, not a voice — fail the stage with a readable reason instead of rendering
+        // a video with no narration (the stage can be retried once the service is ready).
+        var (samples, _) = Wav.ReadMonoSamples(destination);
+        var peak = samples.Length > 0 ? samples.Max(Math.Abs) : 0;
+        if (peak < 0.02)
+        {
+            throw new SpeechSynthesisFailed(
+                $"The text-to-speech service returned near-silent audio (peak {peak:F3}) — " +
+                "it is probably still loading its model. Retry in a moment.");
+        }
+
         LogSynthesized(logger, text.Length, duration, destination);
         return duration;
     }

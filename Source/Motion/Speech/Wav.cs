@@ -55,6 +55,7 @@ public static class Wav
         if (wave.AsSpan().ToArray() is not [0x57, 0x41, 0x56, 0x45]) throw new InvalidDataException("Not a WAVE file.");
 
         int channels = 0, sampleRate = 0, bits = 0, dataLength = 0;
+        long dataPosition = -1;
         while (stream.Position < stream.Length - 8)
         {
             var chunkId = new string(reader.ReadChars(4));
@@ -71,6 +72,7 @@ public static class Wav
                     if (chunkSize > 16) stream.Position += chunkSize - 16;
                     break;
                 case "data":
+                    dataPosition = stream.Position;
                     dataLength = chunkSize;
                     stream.Position = stream.Length; // done once we have data
                     break;
@@ -79,6 +81,10 @@ public static class Wav
                     break;
             }
         }
+
+        // Streaming WAV writers emit 0xFFFFFFFF (-1) for unknown sizes; the data is then simply
+        // everything after the header. Prefer the known-good span over the placeholder.
+        if (dataLength <= 0 && dataPosition > 0) dataLength = (int)(stream.Length - dataPosition);
         return new(channels, sampleRate, bits, dataLength);
     }
 
