@@ -8,6 +8,7 @@ using Motion.Shows.Creation;
 using Motion.Shows.Packaging;
 using Motion.Shows.Planning;
 using Motion.Shows.Production;
+using Motion.Shows.Storyboard;
 using Motion.Shows.Rendering;
 using Motion.Shows.Timing;
 using Motion.Shows.Voiceover;
@@ -85,6 +86,11 @@ public class ShowProjection : IProjectionFor<Show>
         .From<ShowPlanned>(_ => _
             .Set(x => x.Status).ToValue("Planned")
             .Set(x => x.PlannedTitle).To(e => e.Title)
+            .Set(x => x.Error).ToValue(string.Empty))
+        .From<ShowStoryboardSaved>(_ => _
+            .Set(x => x.Voice).To(e => e.Voice)
+            .Set(x => x.PlanJson).To(e => e.PlanJson)
+            .Set(x => x.Status).ToValue("Planned")
             .Set(x => x.Error).ToValue(string.Empty))
         .From<VoiceoverSynthesisRequested>(_ => _
             .Set(x => x.Status).ToValue("Voicing"))

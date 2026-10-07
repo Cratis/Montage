@@ -6,6 +6,7 @@ import { CratisComponentsProvider } from '@cratis/components';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Shows } from './pages/Shows';
 import { ShowDetail } from './pages/ShowDetail';
+import { Storyboard } from './pages/Storyboard';
 import { SettingsDialog } from './pages/Settings';
 
 export default function App() {
@@ -23,6 +24,7 @@ export default function App() {
                 <Routes>
                     <Route path='/' element={<Shows />} />
                     <Route path='/shows/:id' element={<ShowDetail />} />
+                    <Route path='/shows/:id/storyboard' element={<Storyboard />} />
                     <Route path='*' element={<Navigate to='/' replace />} />
                 </Routes>
                 <SettingsDialog visible={settingsVisible} onHide={() => setSettingsVisible(false)} />

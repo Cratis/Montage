@@ -77,7 +77,14 @@ export function ShowDetail() {
                     <h1 className='display text-3xl font-bold truncate'>{plan?.title || show.title}</h1>
                     <p className='text-sm text-[var(--cr-motion-dim)] mt-2 max-w-prose'>{show.description}</p>
                 </div>
-                <StatusBadge status={show.status} />
+                <div className='flex flex-col items-end gap-2'>
+                    <StatusBadge status={show.status} />
+                    <Link
+                        to={`/shows/${show.id}/storyboard`}
+                        className='mono text-[11px] px-2.5 py-1 rounded-full border border-[rgba(255,255,255,0.15)] text-[var(--cr-motion-dim)] hover:text-[var(--cr-motion-ink)] hover:border-[rgba(255,255,255,0.3)] transition-colors whitespace-nowrap'>
+                        ✎ storyboard
+                    </Link>
+                </div>
             </header>
 
             {show.error && (

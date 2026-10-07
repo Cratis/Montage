@@ -5,7 +5,7 @@
         <CratisProxiesOutputPath>$(MSBuildThisFileDirectory).frontend/Api</CratisProxiesOutputPath>
         <CratisProxiesSegmentsToSkip>1</CratisProxiesSegmentsToSkip>
         <CratisProxiesSkipOutputDeletion>true</CratisProxiesSkipOutputDeletion>
-        <CratisProxiesSkipCommandNameInRoute>true</CratisProxiesSkipCommandNameInRoute>
+        <CratisProxiesSkipCommandNameInRoute>false</CratisProxiesSkipCommandNameInRoute>
         <AssemblyName>Motion</AssemblyName>
         <RootNamespace>Motion</RootNamespace>
         <InvariantGlobalization>true</InvariantGlobalization>
