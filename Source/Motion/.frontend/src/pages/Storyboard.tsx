@@ -548,6 +548,23 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile, registe
     // the page pauses this preview when the timing tab is hidden
     useEffect(() => { registerPreviewRef?.(previewRef); }, [registerPreviewRef]);
 
+    // two-way sync: when the preview's own HUD scrubs or plays, our playhead follows
+    useEffect(() => {
+        const onMessage = (e: MessageEvent) => {
+            if (e.source !== previewRef.current?.contentWindow) return;
+            if (!e.data || typeof e.data !== 'object' || e.data.motion !== 'position') return;
+            const local = Math.min(duration, Math.max(0, (Number(e.data.t) || 0) - offset));
+            setPlayhead(local);
+            if (audioRef.current) {
+                const want = takeFile ? local : offset + local;
+                if (Math.abs(audioRef.current.currentTime - want) > 0.3) audioRef.current.currentTime = want;
+            }
+            setPlaying(!!e.data.playing);
+        };
+        window.addEventListener('message', onMessage);
+        return () => window.removeEventListener('message', onMessage);
+    }, [duration, offset, takeFile]);
+
     // leaving the dialog entirely must not leave the voice talking
     useEffect(() => () => { audioRef.current?.pause(); }, []);
 
@@ -698,8 +715,8 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile, registe
             c.setLineDash([]);
         }
 
-        // playhead - grab it to scrub
-        if (playing || playhead > 0 || scrubRef.current) {
+        // playhead - always visible, grab it to scrub
+        {
             const px = x(playhead);
             c.strokeStyle = '#8c7cf6';
             c.lineWidth = scrubRef.current ? 2.5 : 1.5;
@@ -740,6 +757,19 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile, registe
         if (audioRef.current) audioRef.current.currentTime = takeFile ? clamped : offset + clamped;
         previewRef.current?.contentWindow?.postMessage({ motion: 'seek', t: offset + clamped }, '*');
         draw();
+    };
+
+    const onKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === ' ') {
+            e.preventDefault();
+            play();
+        } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            scrubTo(Math.min(duration, playhead + duration * 0.1));
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            scrubTo(Math.max(0, playhead - duration * 0.1));
+        }
     };
 
     const toTime = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -945,8 +975,10 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile, registe
             </div>
             <canvas
                 ref={canvasRef}
-                className='w-full rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] touch-none select-none'
+                className='w-full rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] touch-none select-none focus:outline-none focus:border-[rgba(140,124,246,0.5)]'
                 style={{ height: 170 }}
+                tabIndex={0}
+                onKeyDown={onKeyDown}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}

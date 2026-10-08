@@ -37,6 +37,9 @@ export class Player {
 
   get current(): number { return this.t; }
 
+  /** Whether playback is running - hosts mirror their own UI to it. */
+  get isPlaying(): boolean { return this.playing; }
+
   private loopRunning = false;
 
   /** The rAF loop runs for the lifetime of the page once started. */
