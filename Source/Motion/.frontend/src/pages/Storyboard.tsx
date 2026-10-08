@@ -549,22 +549,24 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile, registe
     // the page pauses this preview when the timing tab is hidden
     useEffect(() => { registerPreviewRef?.(previewRef); }, [registerPreviewRef]);
 
-    // two-way sync: when the preview's own HUD scrubs or plays, our playhead follows
+    // two-way sync: when the preview's own HUD scrubs, our playhead follows. Reports never
+    // touch our playing state - our timeline is the clock while it plays (the preview is
+    // parked after a seek and would otherwise report playing:false and freeze playback).
     useEffect(() => {
         const onMessage = (e: MessageEvent) => {
             if (e.source !== previewRef.current?.contentWindow) return;
             if (!e.data || typeof e.data !== 'object' || e.data.motion !== 'position') return;
+            if (playing || scrubRef.current) return;
             const local = Math.min(duration, Math.max(0, (Number(e.data.t) || 0) - offset));
             setPlayhead(local);
             if (audioRef.current) {
                 const want = takeFile ? local : offset + local;
                 if (Math.abs(audioRef.current.currentTime - want) > 0.3) audioRef.current.currentTime = want;
             }
-            setPlaying(!!e.data.playing);
         };
         window.addEventListener('message', onMessage);
         return () => window.removeEventListener('message', onMessage);
-    }, [duration, offset, takeFile]);
+    }, [duration, offset, takeFile, playing]);
 
     // leaving the dialog entirely must not leave the voice talking
     useEffect(() => () => { audioRef.current?.pause(); }, []);
@@ -671,7 +673,7 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile, registe
         words.forEach((word, i) => {
             const px = x(word.start);
             const py = dotY(i);
-            const isActive = playing && playhead >= word.start && playhead < word.end;
+            const isActive = playhead >= word.start && playhead < word.end;
             const isPast = playhead >= word.end;
             const isHot = hover === i || dragRef.current === i;
             const isSelected = selected.includes(i);
