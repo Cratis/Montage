@@ -516,26 +516,40 @@ export function StoryboardEditor({
  * any word that lands off its beat. Saving writes the words back into the lyrics data (and the
  * packaged copy the preview reads), so the motion follows the edit without a re-run.
  */
-function TimingEditor({ showId, sceneNumber, offset, duration, takeFile }: {
+function TimingEditor({ showId, sceneNumber, offset, duration, takeFile, registerPreviewRef }: {
     showId: string;
     sceneNumber: number;
     offset: number;
     duration: number;
     takeFile?: string;
+    registerPreviewRef?: (ref: React.RefObject<HTMLIFrameElement | null>) => void;
 }) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
+    const previewRef = useRef<HTMLIFrameElement | null>(null);
     const dragRef = useRef<number | null>(null);
+    const scrubRef = useRef(false);
+    const groupAnchorRef = useRef<number | null>(null);
+    const selectRectRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+    const lastSentRef = useRef(0);
     const [words, setWords] = useState<{ word: string; start: number; end: number; orig: number }[]>([]);
     const [baseline, setBaseline] = useState<{ word: string; start: number; end: number; orig: number }[]>([]);
     const [peaks, setPeaks] = useState<number[]>([]);
     const [hover, setHover] = useState<number | null>(null);
+    const [selected, setSelected] = useState<number[]>([]);
+    const [selectRect, setSelectRect] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
     const [playing, setPlaying] = useState(false);
     const [playhead, setPlayhead] = useState(0);
     const [dirty, setDirty] = useState(false);
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState('');
     const [command, setValues] = SaveSceneTiming.use();
+
+    // the page pauses this preview when the timing tab is hidden
+    useEffect(() => { registerPreviewRef?.(previewRef); }, [registerPreviewRef]);
+
+    // leaving the dialog entirely must not leave the voice talking
+    useEffect(() => () => { audioRef.current?.pause(); }, []);
 
     // the words the engine actually uses - from the packaged lyrics data, scene-local
     useEffect(() => {
@@ -606,6 +620,7 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile }: {
         const w = W / 2, h = H / 2;
         const pad = 14;
         const x = (t: number) => pad + (Math.min(t, duration) / Math.max(duration, 0.001)) * (w - pad * 2);
+        const dotY = (i: number) => 58 + (i % 2) * 9;
         c.clearRect(0, 0, w, h);
 
         // ruler
@@ -637,16 +652,23 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile }: {
         // words: a dot per word, staggered vertically so neighbours stay readable
         words.forEach((word, i) => {
             const px = x(word.start);
-            const py = 58 + (i % 2) * 9;
+            const py = dotY(i);
             const isActive = playing && playhead >= word.start && playhead < word.end;
             const isPast = playhead >= word.end;
             const isHot = hover === i || dragRef.current === i;
+            const isSelected = selected.includes(i);
+            if (isSelected) {
+                c.strokeStyle = 'rgba(140,124,246,0.85)';
+                c.beginPath();
+                c.arc(px, py, 6.5, 0, Math.PI * 2);
+                c.stroke();
+            }
             c.beginPath();
             c.arc(px, py, isHot ? 5.5 : 4, 0, Math.PI * 2);
             c.fillStyle = isHot || isActive ? '#8c7cf6' : isPast ? 'rgba(240,238,230,0.75)' : 'rgba(240,238,230,0.35)';
             c.fill();
             // stem down to the waveform - where the word sits in the recording
-            c.strokeStyle = isHot || isActive ? 'rgba(140,124,246,0.5)' : 'rgba(255,255,255,0.12)';
+            c.strokeStyle = isHot || isActive || isSelected ? 'rgba(140,124,246,0.5)' : 'rgba(255,255,255,0.12)';
             c.beginPath();
             c.moveTo(px, py + 6); c.lineTo(px, waveTop - 2);
             c.stroke();
@@ -664,13 +686,27 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile }: {
             }
         });
 
-        // playhead
-        if (playing || playhead > 0) {
+        // rubber-band selection
+        if (selectRect) {
+            const r = selectRect;
+            c.fillStyle = 'rgba(140,124,246,0.14)';
+            c.strokeStyle = 'rgba(140,124,246,0.7)';
+            c.setLineDash([4, 3]);
+            c.beginPath();
+            c.rect(Math.min(r.x0, r.x1), Math.min(r.y0, r.y1), Math.abs(r.x1 - r.x0), Math.abs(r.y1 - r.y0));
+            c.fill(); c.stroke();
+            c.setLineDash([]);
+        }
+
+        // playhead - grab it to scrub
+        if (playing || playhead > 0 || scrubRef.current) {
             const px = x(playhead);
             c.strokeStyle = '#8c7cf6';
+            c.lineWidth = scrubRef.current ? 2.5 : 1.5;
             c.beginPath();
             c.moveTo(px, 32); c.lineTo(px, h - 8);
             c.stroke();
+            c.lineWidth = 1;
             c.fillStyle = '#8c7cf6';
             c.beginPath();
             c.moveTo(px - 4, 32); c.lineTo(px + 4, 32); c.lineTo(px, 38);
@@ -680,22 +716,40 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile }: {
 
     useEffect(draw);
 
-    // playback: the scene's own take, scene-local - the karaoke shows the drift live
+    // playback: the scene's own take, scene-local - the karaoke shows the drift live,
+    // and the visuals below follow the playhead so eye and ear agree
     useEffect(() => {
         if (!playing) return;
         let raf = 0;
         const tick = () => {
-            setPlayhead(audioRef.current?.currentTime ?? 0);
+            const t = audioRef.current?.currentTime ?? 0;
+            setPlayhead(t);
+            if (Math.abs(t - lastSentRef.current) > 0.08) {
+                lastSentRef.current = t;
+                previewRef.current?.contentWindow?.postMessage({ motion: 'seek', t: offset + t }, '*');
+            }
             raf = requestAnimationFrame(tick);
         };
         raf = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(raf);
-    }, [playing]);
+    }, [playing, offset]);
+
+    const scrubTo = (t: number) => {
+        const clamped = Math.min(duration, Math.max(0, t));
+        setPlayhead(clamped);
+        if (audioRef.current) audioRef.current.currentTime = takeFile ? clamped : offset + clamped;
+        previewRef.current?.contentWindow?.postMessage({ motion: 'seek', t: offset + clamped }, '*');
+        draw();
+    };
 
     const toTime = (e: React.PointerEvent<HTMLCanvasElement>) => {
         const rect = e.currentTarget.getBoundingClientRect();
         const pad = 14;
         return Math.min(duration, Math.max(0, ((e.clientX - rect.left - pad) / (rect.width - pad * 2)) * duration));
+    };
+    const toClientX = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        return e.clientX - rect.left;
     };
     const hitWord = (t: number) => {
         let best = -1, bestDist = 12 / (canvasRef.current?.parentElement?.clientWidth ?? 800) * duration;
@@ -707,36 +761,119 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile }: {
     };
 
     const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        const hit = hitWord(toTime(e));
-        if (hit < 0) return;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        dragRef.current = hit;
-        setHover(hit);
-        draw();
-    };
-    const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const px = e.clientX - rect.left;
+        const py = e.clientY - rect.top;
         const t = toTime(e);
-        if (dragRef.current === null) {
-            const hit = hitWord(t);
-            if (hit !== hover) { setHover(hit); draw(); }
+        // the playhead line wins if it is grabbed
+        const phx = 14 + (playhead / Math.max(duration, 0.001)) * (rect.width - 28);
+        if (Math.abs(px - phx) < 8 && py > 26) {
+            scrubRef.current = true;
+            e.currentTarget.setPointerCapture(e.pointerId);
+            scrubTo(t);
             return;
         }
-        const i = dragRef.current;
-        setWords((prev) => {
-            const next = [...prev];
-            const word = { ...next[i] };
-            const snapped = Math.round(t * 50) / 50;
-            const lo = i > 0 ? next[i - 1].start + 0.04 : 0;
-            const hi = i < next.length - 1 ? next[i + 1].start - 0.04 : duration - 0.05;
-            word.start = Math.min(Math.max(snapped, lo), Math.max(lo, hi));
-            word.end = Math.min(duration, word.start + (word.orig || 0.2));
-            next[i] = word;
-            setDirty(true);
-            return next;
-        });
+        const hit = hitWord(t);
+        if (hit >= 0) {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            if (selected.includes(hit) && selected.length > 1) {
+                // the selection moves as one
+                groupAnchorRef.current = t;
+                dragRef.current = hit;
+            } else {
+                if (selected.length) setSelected([]);
+                dragRef.current = hit;
+                setHover(hit);
+            }
+            draw();
+            return;
+        }
+        // empty space: rubber-band select
+        e.currentTarget.setPointerCapture(e.pointerId);
+        const r = { x0: px, y0: py, x1: px, y1: py };
+        selectRectRef.current = r;
+        setSelectRect(r);
+        setSelected([]);
         draw();
     };
-    const onPointerUp = () => { dragRef.current = null; draw(); };
+
+    const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        const t = toTime(e);
+        // scrubbing the playhead: audio, playhead and the visuals below all follow
+        if (scrubRef.current) { scrubTo(t); return; }
+
+        // rubber band: grow it, select every dot inside
+        if (selectRectRef.current) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const r = { ...selectRectRef.current, x1: e.clientX - rect.left, y1: e.clientY - rect.top };
+            selectRectRef.current = r;
+            setSelectRect(r);
+            const pad = 14;
+            const pxOf = (tt: number) => pad + (Math.min(tt, duration) / Math.max(duration, 0.001)) * (rect.width - pad * 2);
+            const inside = words.map((word, i) => {
+                const px = pxOf(word.start), py = 58 + (i % 2) * 9;
+                return px >= Math.min(r.x0, r.x1) - 4 && px <= Math.max(r.x0, r.x1) + 4
+                    && py >= Math.min(r.y0, r.y1) - 6 && py <= Math.max(r.y0, r.y1) + 6 ? i : -1;
+            }).filter((i) => i >= 0);
+            setSelected(inside);
+            draw();
+            return;
+        }
+
+        // group drag: the whole selection shifts by the pointer's delta
+        if (dragRef.current !== null && groupAnchorRef.current !== null && selected.length > 1) {
+            const delta = t - groupAnchorRef.current;
+            groupAnchorRef.current = t;
+            setWords((prev) => {
+                const next = [...prev];
+                let d = delta;
+                const minStart = Math.min(...selected.map((idx) => next[idx].start));
+                const maxEnd = Math.max(...selected.map((idx) => next[idx].end));
+                d = Math.max(d, -minStart);
+                d = Math.min(d, duration - maxEnd);
+                for (const idx of selected) {
+                    next[idx] = { ...next[idx], start: next[idx].start + d, end: next[idx].end + d };
+                }
+                setDirty(true);
+                return next;
+            });
+            draw();
+            return;
+        }
+
+        // single word drag
+        if (dragRef.current !== null) {
+            const i = dragRef.current;
+            setWords((prev) => {
+                const next = [...prev];
+                const word = { ...next[i] };
+                const snapped = Math.round(t * 50) / 50;
+                const lo = i > 0 ? next[i - 1].start + 0.04 : 0;
+                const hi = i < next.length - 1 ? next[i + 1].start - 0.04 : duration - 0.05;
+                word.start = Math.min(Math.max(snapped, lo), Math.max(lo, hi));
+                word.end = Math.min(duration, word.start + (word.orig || 0.2));
+                next[i] = word;
+                setDirty(true);
+                return next;
+            });
+            draw();
+            return;
+        }
+
+        const hit = hitWord(t);
+        if (hit !== hover) { setHover(hit); draw(); }
+    };
+
+    const onPointerUp = () => {
+        scrubRef.current = false;
+        groupAnchorRef.current = null;
+        dragRef.current = null;
+        if (selectRectRef.current) {
+            selectRectRef.current = null;
+            setSelectRect(null);
+        }
+        draw();
+    };
 
     const play = () => {
         const url = takeFile ? `/packages/${showId}/${takeFile}` : `/packages/${showId}/voiceover.wav`;
@@ -745,10 +882,16 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile }: {
             audioRef.current.onended = () => setPlaying(false);
         }
         const audio = audioRef.current;
-        if (playing) { audio.pause(); setPlaying(false); return; }
+        if (playing) {
+            audio.pause();
+            setPlaying(false);
+            previewRef.current?.contentWindow?.postMessage('motion:pause', '*');
+            return;
+        }
         if (!takeFile) audio.currentTime = offset + playhead;
         else if (audio.currentSrc !== url) audio.src = url;
         if (playhead >= duration - 0.05) { audio.currentTime = takeFile ? 0 : offset; setPlayhead(0); }
+        previewRef.current?.contentWindow?.postMessage({ motion: 'seek', t: offset + playhead }, '*');
         void audio.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
     };
 
@@ -777,6 +920,7 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile }: {
 
     const reset = () => {
         setWords(baseline.map((w) => ({ ...w })));
+        setSelected([]);
         setDirty(false);
     };
 
@@ -788,8 +932,8 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile }: {
                     title={playing ? 'Stop' : 'Play the recording — watch which words light up'}
                     onClick={play}>{playing ? '❙❙' : '▶'}</button>
                 <span className='text-xs text-[var(--cr-motion-faint)] flex-1'>
-                    Drag a word onto the beat it belongs to. Hover to see it. The violet line is the
-                    playhead — a word lighting up late or early is a word to drag.
+                    Drag words onto the beats they belong to; drag on empty space to select several and
+                    move them together; grab the violet playhead to scrub — the visuals below follow.
                 </span>
                 {dirty && (
                     <>
@@ -806,7 +950,14 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile }: {
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
-                onPointerLeave={() => { if (dragRef.current === null) setHover(null); }} />
+                onPointerLeave={() => { if (dragRef.current === null && !scrubRef.current && !selectRectRef.current) setHover(null); }} />
+            <iframe
+                ref={previewRef}
+                key={`${showId}-${sceneNumber}`}
+                title={`scene ${sceneNumber} timing preview`}
+                className='w-full aspect-video rounded-lg border border-[rgba(255,255,255,0.1)] bg-black'
+                src={`/preview/index.html?pkg=/packages/${showId}/package&scene=scene-${sceneNumber}`}
+                allow='autoplay' />
             {error && <p className='text-sm text-[#e5484d]'>{error}</p>}
             <div className='mono text-[11px] text-[var(--cr-motion-faint)] flex gap-4'>
                 <span>{words.length} words</span>
@@ -849,6 +1000,7 @@ function SceneInspector({
     const showId = show.id.toString();
     const sceneNumber = index + 1;
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
+    const timingPreviewHolder = useRef<React.RefObject<HTMLIFrameElement | null> | null>(null);
 
     // switching tabs never resizes the dialog: every panel is stacked in the same grid
     // cell, so the dialog is sized by the tallest tab; hidden panels keep that size
@@ -859,8 +1011,9 @@ function SceneInspector({
     });
 
     const switchTab = (id: (typeof TABS)[number]['id']) => {
-        // leaving the preview pauses it - a hidden iframe would keep playing its voice
+        // leaving a tab with a live preview pauses it - a hidden iframe would keep playing
         if (tab === 'preview' && id !== 'preview') iframeRef.current?.contentWindow?.postMessage('motion:pause', '*');
+        if (tab === 'timing' && id !== 'timing') timingPreviewHolder.current?.current?.contentWindow?.postMessage('motion:pause', '*');
         setTab(id);
     };
 
@@ -1010,7 +1163,8 @@ function SceneInspector({
                             sceneNumber={sceneNumber}
                             offset={meta.offset}
                             duration={meta.duration}
-                            takeFile={meta.file} />
+                            takeFile={meta.file}
+                            registerPreviewRef={(ref) => { timingPreviewHolder.current = ref; }} />
                     ) : (
                         <div className='flex flex-col gap-2'>
                             <p className='text-[var(--cr-motion-dim)]'>

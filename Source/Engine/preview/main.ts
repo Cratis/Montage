@@ -98,9 +98,15 @@ async function boot() {
   }
   if (exportMode) player.setHudVisible(false);
 
-  // hosts (the scene inspector) pause the preview when its tab is hidden
+  // hosts (the scene inspector) pause the preview when its tab is hidden, and scrub it
+  // to an absolute show time so the timing editor's playhead and the visuals stay in lock
   window.addEventListener('message', (e) => {
     if (e.data === 'motion:pause') player.pause();
+    else if (e.data && typeof e.data === 'object' && e.data.motion === 'seek') {
+      player.pause();
+      const t = Number(e.data.t);
+      if (!Number.isNaN(t)) player.seek(Math.max(0, Math.min(engine.duration, t)));
+    }
   });
 
   // opened from the editor's package panel: keep a visible way back to the show
