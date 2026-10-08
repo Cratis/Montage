@@ -17,6 +17,11 @@ export class Player {
     window.addEventListener('keydown', (e) => this.key(e));
     this.buildUi();
     this.tick = this.tick.bind(this);
+    // playPlate auto-starts playback, but browsers block audio until a user gesture -
+    // pick the voice up on the first interaction so sync never yanks time back to zero
+    window.addEventListener('pointerdown', () => {
+      if (this.playing && this.audio?.paused) void this.audio.play().catch(() => {});
+    });
   }
 
   attachAudio(src: string | null) {
@@ -80,6 +85,11 @@ export class Player {
     if (this.playing) void this.audio?.play().catch(() => {});
     else this.audio?.pause();
     this.syncPlayBtn();
+  }
+
+  /** Stop playback, keeping the current position (hosts hide the preview mid-scene). */
+  pause() {
+    if (this.playing) this.toggle();
   }
 
   seek(t: number) {

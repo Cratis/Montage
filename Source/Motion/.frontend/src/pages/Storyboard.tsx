@@ -3,9 +3,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@cratis/components/Common';
-import { Show, ObserveAll } from '../../Api/Shows/Listing';
+import { Show } from '../../Api/Shows/Listing';
 import { SaveStoryboard } from '../../Api/Shows/Storyboard';
 import { ShowPlan } from '../plan';
 
@@ -144,16 +143,25 @@ function ListField({ label, value, onChange, placeholder }: { label: string; val
 }
 
 /**
- * The storyboard: the show laid out as its scenes, each with the engine's own mid-scene still
- * as its preview. Drag scenes to reorder (tilted and ghosted while dragging, with drop lines),
- * click one to open it - play the scene with its voice in the engine, edit its content, narration,
- * motion and timing in tabs. Save persists; save & render re-runs production.
+ * The storyboard editor: the show laid out as its scenes, each with the engine's own mid-scene
+ * still as its preview. Drag scenes to reorder (the row flies with the pointer, ghosted), click
+ * one to play it with its voice and edit content, narration, motion and timing in tabs.
+ *
+ * Embedded as the Storyboard tab of the show page: it owns the scene state and the save logic,
+ * while the page header owns the Save buttons (handed up through registerSave) and the busy/
+ * error state (passed down).
  */
-export function Storyboard() {
-    const { id } = useParams();
-    const navigate = useNavigate();
-    const [shows] = ObserveAll.use();
-    const show = shows.data.find((s) => s.id.toString() === id);
+export function StoryboardEditor({
+    show, registerSave, busy, setBusy, saveError, setSaveError,
+}: {
+    show: Show;
+    registerSave: (save: (produce: boolean) => void) => void;
+    busy: boolean;
+    setBusy: (busy: boolean) => void;
+    saveError: string;
+    setSaveError: (error: string) => void;
+}) {
+    const id = show.id.toString();
     const plan = useMemo(() => ShowPlan.parse(show?.planJson), [show?.planJson]);
 
     const [title, setTitle] = useState<string>('');
@@ -161,8 +169,6 @@ export function Storyboard() {
     const [scenes, setScenes] = useState<Scene[]>([]);
     const [loadedFor, setLoadedFor] = useState<string>('');
     const [command, setValues] = SaveStoryboard.use();
-    const [busy, setBusy] = useState(false);
-    const [saveError, setSaveError] = useState<string>('');
     const [inspecting, setInspecting] = useState<number | null>(null);
 
     // production artifacts: per-scene voice metadata + the engine's mid-scene stills
@@ -302,6 +308,9 @@ export function Storyboard() {
         setGhost(null);
     };
 
+    // the show page header owns the Save buttons - keep the closure it holds current
+    useEffect(() => { registerSave(save); });
+
     const totalWords = scenes.reduce((sum, s) => sum + wordsIn(s.spoken), 0);
 
     const save = async (produce: boolean) => {
@@ -318,7 +327,7 @@ export function Storyboard() {
             } as never);
             const result = await command.execute();
             if (result.isSuccess) {
-                if (!produce) navigate(`/shows/${id}`);
+                // plain save: stay put - the header buttons settle and the page reflects the show
             } else {
                 const problems = [...result.validationResults.map((v) => v.message), ...result.exceptionMessages].filter(Boolean);
                 setSaveError(problems.length > 0 ? problems.join('; ') : 'The storyboard could not be saved.');
@@ -343,31 +352,7 @@ export function Storyboard() {
     );
 
     return (
-        <div className='min-h-screen max-w-5xl mx-auto px-8 py-10'>
-            <div className='flex items-center gap-3 mb-2'>
-                <Link to={`/shows/${id}`} className='mono text-xs text-[var(--cr-motion-faint)] hover:text-[var(--cr-motion-ink)]'>← show</Link>
-            </div>
-            <header className='flex items-end justify-between gap-6 mb-6'>
-                <div>
-                    <div className='eyebrow mb-2'>storyboard</div>
-                    <h1 className='display text-3xl font-bold'>{title || 'Scene by scene'}</h1>
-                    <p className='text-sm text-[var(--cr-motion-dim)] mt-2 max-w-prose'>
-                        Drag scenes to reorder. Click a scene to play it with its voice, and to edit
-                        its content, narration, motion and timing.
-                    </p>
-                </div>
-                <div className='flex gap-2 flex-shrink-0'>
-                    <Button label='Save' icon='pi pi-save' severity='secondary' outlined loading={busy} onClick={() => save(false)} />
-                    <Button label='Save & render' icon='pi pi-sparkles' loading={busy} onClick={() => save(true)} />
-                </div>
-            </header>
-
-            {saveError && (
-                <div className='panel p-4 mb-6 border-l-4' style={{ borderLeftColor: '#e5484d' }}>
-                    <p className='text-sm text-[#e5484d]'>{saveError}</p>
-                </div>
-            )}
-
+        <>
             <section className='panel p-5 mb-6 grid grid-cols-1 md:grid-cols-3 gap-4'>
                 <Field label='Title' value={title} onChange={setTitle} />
                 <label className='block'>
@@ -445,12 +430,8 @@ export function Storyboard() {
                 <DropLine gap={scenes.length} />
             </div>
 
-            <div className='flex items-center justify-between mt-4'>
+            <div className='flex items-center mt-4'>
                 <Button label='Add scene' icon='pi pi-plus' text onClick={() => addScene(scenes.length - 1)} />
-                <div className='flex gap-2'>
-                    <Button label='Save' icon='pi pi-save' severity='secondary' outlined loading={busy} onClick={() => save(false)} />
-                    <Button label='Save & render' icon='pi pi-sparkles' loading={busy} onClick={() => save(true)} />
-                </div>
             </div>
 
             {ghost && scenes[ghost.index] && createPortal(
@@ -490,9 +471,10 @@ export function Storyboard() {
                     meta={sceneMeta[inspecting + 1]}
                     onChange={(patch) => update(inspecting, patch)}
                     onParam={(key, value) => setParam(inspecting, key, value)}
+                    onProduce={() => void save(true)}
                     onClose={() => setInspecting(null)} />
             )}
-        </div>
+        </>
     );
 }
 
@@ -510,7 +492,7 @@ const TABS = [
  * scene has - content parameters, narration, motion preset and description, recorded timing.
  */
 function SceneInspector({
-    show, index, scene, meta, onChange, onParam, onClose,
+    show, index, scene, meta, onChange, onParam, onProduce, onClose,
 }: {
     show: Show;
     index: number;
@@ -518,6 +500,7 @@ function SceneInspector({
     meta?: SceneMeta;
     onChange: (patch: Partial<Scene>) => void;
     onParam: (key: string, value: unknown) => void;
+    onProduce: () => void;
     onClose: () => void;
 }) {
     const [tab, setTab] = useState<(typeof TABS)[number]['id']>('preview');
@@ -525,6 +508,21 @@ function SceneInspector({
     const presets = MOTION_PRESETS[scene.type] ?? [];
     const showId = show.id.toString();
     const sceneNumber = index + 1;
+    const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+    // switching tabs never resizes the dialog: every panel is stacked in the same grid
+    // cell, so the dialog is sized by the tallest tab; hidden panels keep that size
+    const panelStyle = (id: (typeof TABS)[number]['id']): React.CSSProperties => ({
+        gridArea: '1 / 1',
+        visibility: tab === id ? 'visible' : 'hidden',
+        pointerEvents: tab === id ? 'auto' : 'none',
+    });
+
+    const switchTab = (id: (typeof TABS)[number]['id']) => {
+        // leaving the preview pauses it - a hidden iframe would keep playing its voice
+        if (tab === 'preview' && id !== 'preview') iframeRef.current?.contentWindow?.postMessage('motion:pause', '*');
+        setTab(id);
+    };
 
     return (
         <div className='fixed inset-0 z-40 grid place-items-center bg-[rgba(6,7,10,0.72)] p-6' onClick={onClose}>
@@ -543,15 +541,15 @@ function SceneInspector({
                         <button
                             key={t.id}
                             className={`px-3 py-1.5 rounded-md text-sm transition-colors ${tab === t.id ? 'bg-[rgba(140,124,246,0.14)] text-[var(--cr-motion-violet)]' : 'text-[var(--cr-motion-dim)] hover:text-[var(--cr-motion-ink)]'}`}
-                            onClick={() => setTab(t.id)}>
+                            onClick={() => switchTab(t.id)}>
                             {t.label}
                         </button>
                     ))}
                 </div>
 
-                {tab === 'preview' && (
-                    <div className='flex flex-col gap-3'>
+                <div className='flex flex-col gap-3' style={panelStyle('preview')}>
                         <iframe
+                            ref={iframeRef}
                             key={`${showId}-${sceneNumber}`}
                             title={`scene ${sceneNumber} preview`}
                             className='w-full aspect-video rounded-lg border border-[rgba(255,255,255,0.1)] bg-black'
@@ -561,17 +559,13 @@ function SceneInspector({
                             The engine in the browser, playing this scene with its voiceover — the same
                             scene the renderer captures. Space plays/pauses; the HUD scrubs.
                         </p>
-                    </div>
-                )}
+                </div>
 
-                {tab === 'content' && (
-                    <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
+                <div className='grid grid-cols-1 md:grid-cols-2 gap-3' style={panelStyle('content')}>
                         <ParamsEditor scene={{ type: scene.type, params: scene.params }} onParam={onParam} />
-                    </div>
-                )}
+                </div>
 
-                {tab === 'narration' && (
-                    <div className='flex flex-col gap-3'>
+                <div className='flex flex-col gap-3' style={panelStyle('narration')}>
                         <label className='block'>
                             <span className='eyebrow block mb-1.5'>What the voice says</span>
                             <textarea
@@ -580,6 +574,16 @@ function SceneInspector({
                                 value={scene.spoken}
                                 onChange={(e) => onChange({ spoken: e.target.value })} />
                         </label>
+                        {(!meta || meta.spoken !== scene.spoken) && (
+                            <div className='panel panel-accent p-4 flex items-center gap-4 flex-wrap'>
+                                <span className='text-sm flex-1 min-w-[16rem]'>
+                                    {meta
+                                        ? 'Narration changed — the recording, scene timing and preview are stale.'
+                                        : 'This scene has no voice recording yet.'}
+                                </span>
+                                <Button label='Save & re-render' icon='pi pi-sparkles' onClick={onProduce} />
+                            </div>
+                        )}
                         {meta && (
                             <div className='panel p-4 flex items-center gap-4'>
                                 <button
@@ -594,11 +598,9 @@ function SceneInspector({
                                 </div>
                             </div>
                         )}
-                    </div>
-                )}
+                </div>
 
-                {tab === 'motion' && (
-                    <div className='flex flex-col gap-4'>
+                <div className='flex flex-col gap-4' style={panelStyle('motion')}>
                         {presets.length > 0 ? (
                             <>
                                 <label className='block'>
@@ -648,11 +650,9 @@ function SceneInspector({
                                 This scene type has no infographic motion presets — it animates its text by itself.
                             </p>
                         )}
-                    </div>
-                )}
+                </div>
 
-                {tab === 'timing' && (
-                    <div className='flex flex-col gap-2 text-sm'>
+                <div className='flex flex-col gap-2 text-sm' style={panelStyle('timing')}>
                         {meta ? (
                             <>
                                 <Row label='Starts at' value={`${meta.offset.toFixed(2)}s into the show`} />
@@ -669,8 +669,7 @@ function SceneInspector({
                                 The show hasn't spoken yet — save & render to get this scene's recording and timing.
                             </p>
                         )}
-                    </div>
-                )}
+                </div>
             </div>
         </div>
     );

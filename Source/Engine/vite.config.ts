@@ -3,6 +3,9 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   root: 'preview',
   publicDir: '../public',
+  // relative base: the built preview is served from /preview/ inside the editor, so
+  // absolute /main.js would fall through to the editor's SPA and the iframe boots nothing
+  base: './',
   build: {
     outDir: '../dist/preview',
     emptyOutDir: true,

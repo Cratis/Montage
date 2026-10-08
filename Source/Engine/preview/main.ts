@@ -55,6 +55,7 @@ async function boot() {
     errors: () => engine.errors,
     seek: (t: number) => player.seek(t),
     play: () => player.toggle(),
+    pause: () => player.pause(),
     still: (t: number) => { player.seek(t); return engine.png(); },
     pixels: (t: number) => { player.seek(t); engine.renderAt(t); return engine.pixels().buffer; },
     png: () => engine.png(),
@@ -96,6 +97,11 @@ async function boot() {
     player.start(startAt);
   }
   if (exportMode) player.setHudVisible(false);
+
+  // hosts (the scene inspector) pause the preview when its tab is hidden
+  window.addEventListener('message', (e) => {
+    if (e.data === 'motion:pause') player.pause();
+  });
 }
 
 boot().catch((e) => fail(String((e as Error)?.stack ?? e)));

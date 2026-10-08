@@ -1,13 +1,14 @@
 // Copyright (c) Cratis. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-import { useMemo, useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useMemo, useEffect, useRef, useState } from 'react';
+import { useParams, useLocation, useNavigate, Link } from 'react-router-dom';
 import { Button } from '@cratis/components/Common';
 import { Show, ObserveAll } from '../../Api/Shows/Listing';
 import { RegenerateShowStage } from '../../Api/Shows/Creation';
 import { All as AllJobs, JobActivity } from '../../Api/Shows/Production';
 import { ShowPlan } from '../plan';
+import { StoryboardEditor } from './Storyboard';
 
 export const stageFlow = [
     { status: 'Created', label: 'created', stage: undefined },
@@ -40,6 +41,8 @@ export function StatusBadge({ status }: { status: string }) {
 
 export function ShowDetail() {
     const { id } = useParams();
+    const location = useLocation();
+    const navigate = useNavigate();
     const [shows] = ObserveAll.use();
     const [jobs] = AllJobs.use();
     const show = shows.data.find((s) => s.id.toString() === id);
@@ -47,6 +50,21 @@ export function ShowDetail() {
     const showJobs = jobs.data
         .filter((job: JobActivity) => job.showId === id)
         .sort((a: JobActivity, b: JobActivity) => new Date(b.created).getTime() - new Date(a.created).getTime());
+
+    // one page, two tabs: production on the left of the slash, scene editing behind the deep
+    // link the shows list and 'define slides' use — both stay mounted so unsaved edits survive
+    const tab = location.pathname.endsWith('/storyboard') ? 'storyboard' : 'overview';
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const switchTab = (next: 'overview' | 'storyboard') => {
+        if (next === tab) return;
+        if (tab === 'overview') videoRef.current?.pause(); // a hidden player would keep sounding
+        navigate(next === 'storyboard' ? `/shows/${id}/storyboard` : `/shows/${id}`);
+    };
+
+    // the storyboard editor owns scene state and the save logic; the header owns its buttons
+    const saveRef = useRef<((produce: boolean) => void) | null>(null);
+    const [busy, setBusy] = useState(false);
+    const [saveError, setSaveError] = useState('');
 
     if (!show) {
         return (
@@ -71,22 +89,37 @@ export function ShowDetail() {
             <div className='flex items-center gap-3 mb-2'>
                 <Link to='/' className='mono text-xs text-[var(--cr-motion-faint)] hover:text-[var(--cr-motion-ink)]'>← shows</Link>
             </div>
-            <header className='flex items-start justify-between gap-6 mb-8'>
+            <header className='flex items-start justify-between gap-6 mb-6'>
                 <div className='min-w-0'>
                     <div className='eyebrow mb-2'>{show.status === 'Failed' ? `failed at ${show.stage}` : 'show'}</div>
                     <h1 className='display text-3xl font-bold truncate'>{plan?.title || show.title}</h1>
                     <p className='text-sm text-[var(--cr-motion-dim)] mt-2 max-w-prose'>{show.description}</p>
                 </div>
-                <div className='flex flex-col items-end gap-2'>
+                <div className='flex items-center gap-3 flex-shrink-0 pt-1'>
                     <StatusBadge status={show.status} />
-                    <Link
-                        to={`/shows/${show.id}/storyboard`}
-                        className='mono text-[11px] px-2.5 py-1 rounded-full border border-[rgba(255,255,255,0.15)] text-[var(--cr-motion-dim)] hover:text-[var(--cr-motion-ink)] hover:border-[rgba(255,255,255,0.3)] transition-colors whitespace-nowrap'>
-                        ✎ storyboard
-                    </Link>
+                    <Button label='Save' icon='pi pi-save' severity='secondary' outlined loading={busy} onClick={() => saveRef.current?.(false)} />
+                    <Button label='Save & render' icon='pi pi-sparkles' loading={busy} onClick={() => saveRef.current?.(true)} />
                 </div>
             </header>
 
+            <div className='flex gap-1 mb-6 border-b border-[rgba(255,255,255,0.08)] pb-2'>
+                {(['overview', 'storyboard'] as const).map((t) => (
+                    <button
+                        key={t}
+                        className={`px-3 py-1.5 rounded-md text-sm transition-colors capitalize ${tab === t ? 'bg-[rgba(140,124,246,0.14)] text-[var(--cr-motion-violet)]' : 'text-[var(--cr-motion-dim)] hover:text-[var(--cr-motion-ink)]'}`}
+                        onClick={() => switchTab(t)}>
+                        {t}
+                    </button>
+                ))}
+            </div>
+
+            {saveError && (
+                <div className='panel p-4 mb-6 border-l-4' style={{ borderLeftColor: '#e5484d' }}>
+                    <p className='text-sm text-[#e5484d]'>{saveError}</p>
+                </div>
+            )}
+
+            <div style={tab === 'overview' ? undefined : { display: 'none' }}>
             {show.error && (
                 <div className='panel p-4 mb-6 border-l-4' style={{ borderLeftColor: '#e5484d' }}>
                     <div className='mono text-xs text-[#e5484d] mb-1'>{show.stage} failed</div>
@@ -138,14 +171,15 @@ export function ShowDetail() {
                     <div className='panel p-5 lg:col-span-2'>
                         <div className='eyebrow mb-3'>render</div>
                         <video
+                            ref={videoRef}
                             controls
                             className='w-full rounded-lg border hairline'
-                            src={`/renders/${show.id}/${show.videoPath}`}
+                            src={`/packages/${show.id}/${show.videoPath}`}
                         />
                         <div className='flex items-center gap-4 mt-3 mono text-xs text-[var(--cr-motion-faint)]'>
                             <span>{Math.round(show.videoDurationSeconds)}s</span>
                             <span>{(show.videoSizeBytes / 1024 / 1024).toFixed(1)} MB</span>
-                            <a className='hover:text-[var(--cr-motion-ink)]' href={`/renders/${show.id}/${show.videoPath}`} download>download</a>
+                            <a className='hover:text-[var(--cr-motion-ink)]' href={`/packages/${show.id}/${show.videoPath}`} download>download</a>
                         </div>
                     </div>
                 )}
@@ -175,30 +209,17 @@ export function ShowDetail() {
                 )}
             </section>
 
-            {/* storyboard */}
-            {plan && (
-                <section className='panel p-5'>
-                    <div className='eyebrow mb-4'>storyboard · {plan.scenes.length} scenes</div>
-                    <div className='flex flex-col gap-3'>
-                        {plan.scenes.map((scene, i) => (
-                            <div key={i} className='border hairline rounded-xl p-4'>
-                                <div className='flex items-center justify-between mb-2'>
-                                    <span className='mono text-xs text-[var(--cr-motion-violet)]'>{String(i + 1).padStart(2, '0')} · {scene.type}</span>
-                                </div>
-                                {scene.spoken && (
-                                    <p className='text-sm text-[var(--cr-motion-ink)]/90 mb-2'>
-                                        <span className='mono text-[10px] text-[var(--cr-motion-faint)] mr-2'>SPOKEN</span>
-                                        {scene.spoken}
-                                    </p>
-                                )}
-                                <pre className='mono text-[11px] text-[var(--cr-motion-dim)] whitespace-pre-wrap max-h-32 overflow-y-auto'>
-                                    {JSON.stringify(scene.params ?? {}, null, 2)}
-                                </pre>
-                            </div>
-                        ))}
-                    </div>
-                </section>
-            )}
+            </div>
+
+            <div style={tab === 'storyboard' ? undefined : { display: 'none' }}>
+                <StoryboardEditor
+                    show={show}
+                    registerSave={(fn) => { saveRef.current = fn; }}
+                    busy={busy}
+                    setBusy={setBusy}
+                    saveError={saveError}
+                    setSaveError={setSaveError} />
+            </div>
         </div>
     );
 }
