@@ -25,7 +25,8 @@ public sealed class ShowTimingReactor(IJobsManagerAccessor jobs) : IReactor
     public Task On(VoiceoverSynthesized @event, EventContext context) =>
         jobs.For(context).Start<IShowTimingJob, ShowTimingRequest>(new(
             ShowId.From(context.EventSourceId).Value.ToString(),
-            @event.DurationSeconds));
+            @event.DurationSeconds,
+            @event.Render));
 
     /// <summary>
     /// Re-times when the user asks for it - the duration is read from the voiceover WAV.
@@ -37,5 +38,6 @@ public sealed class ShowTimingReactor(IJobsManagerAccessor jobs) : IReactor
     public Task On(ShowTimingRequested @event, EventContext context) =>
         jobs.For(context).Start<IShowTimingJob, ShowTimingRequest>(new(
             ShowId.From(context.EventSourceId).Value.ToString(),
-            0));
+            0,
+            Render: true));
 }

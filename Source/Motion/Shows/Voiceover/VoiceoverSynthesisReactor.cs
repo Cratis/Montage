@@ -25,7 +25,7 @@ public sealed class VoiceoverSynthesisReactor(IJobsManagerAccessor jobs) : IReac
     [OnceOnly]
     public Task On(ShowPlanned @event, EventContext context) =>
         jobs.For(context).Start<IVoiceoverSynthesisJob, VoiceoverSynthesisRequest>(new(
-            ShowId.From(context.EventSourceId).Value.ToString()));
+            ShowId.From(context.EventSourceId).Value.ToString(), Render: true));
 
     /// <summary>
     /// Re-synthesizes when the user asks for it - the plan comes from disk.
@@ -36,5 +36,5 @@ public sealed class VoiceoverSynthesisReactor(IJobsManagerAccessor jobs) : IReac
     [OnceOnly]
     public Task On(VoiceoverSynthesisRequested @event, EventContext context) =>
         jobs.For(context).Start<IVoiceoverSynthesisJob, VoiceoverSynthesisRequest>(new(
-            ShowId.From(context.EventSourceId).Value.ToString()));
+            ShowId.From(context.EventSourceId).Value.ToString(), Render: true));
 }

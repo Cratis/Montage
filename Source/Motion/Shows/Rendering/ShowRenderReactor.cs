@@ -22,10 +22,15 @@ public sealed class ShowRenderReactor(IJobsManagerAccessor jobs) : IReactor
     /// <param name="context">The event context.</param>
     /// <returns>Awaitable task.</returns>
     [OnceOnly]
-    public Task On(ShowPackaged @event, EventContext context) =>
-        jobs.For(context).Start<IShowRenderJob, ShowRenderRequest>(new(
+    public Task On(ShowPackaged @event, EventContext context)
+    {
+        // packaging without render: the show is workable (voice, timing, stills, preview)
+        // but the user has not asked for the mp4 yet
+        if (!@event.Render) return Task.CompletedTask;
+        return jobs.For(context).Start<IShowRenderJob, ShowRenderRequest>(new(
             ShowId.From(context.EventSourceId).Value.ToString(),
             @event.PackageDirectory));
+    }
 
     /// <summary>
     /// Re-renders when the user asks for it - the package directory comes from the workspace.

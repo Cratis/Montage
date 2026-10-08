@@ -11,7 +11,7 @@ namespace Motion.Shows.Voiceover;
 /// <param name="AudioPath">Path of the voiceover audio file (mp3), relative to the show folder.</param>
 /// <param name="DurationSeconds">Exact duration of the audio.</param>
 [EventType]
-public record VoiceoverSynthesized(string AudioPath, double DurationSeconds);
+public record VoiceoverSynthesized(string AudioPath, double DurationSeconds, bool Render = true);
 
 /// <summary>
 /// Occurs when the user asks for the voiceover to be re-synthesized.

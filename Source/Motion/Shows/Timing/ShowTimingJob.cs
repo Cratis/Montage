@@ -29,7 +29,7 @@ public interface ITimeShowStep : IJobStep<ShowTimingRequest, object, TimeShowSte
 /// What <see cref="ShowTimingJob"/> was asked to do - align the words of one show's narration to
 /// its voiceover. A duration of zero means read it from the voiceover WAV (an explicit re-time).
 /// </summary>
-public record ShowTimingRequest(string ShowId, double DurationSeconds) : IJobRequest;
+public record ShowTimingRequest(string ShowId, double DurationSeconds, bool Render = true) : IJobRequest;
 
 /// <summary>
 /// The persisted state for <see cref="TimeShowStep"/>.
@@ -38,6 +38,7 @@ public class TimeShowStepState : JobStepState
 {
     /// <summary>Gets or sets the identity of the show being timed.</summary>
     public string ShowId { get; set; } = string.Empty;
+    public bool Render { get; set; } = true;
 
     /// <summary>Gets or sets the voiceover duration in seconds - zero to read from the WAV.</summary>
     public double DurationSeconds { get; set; }
@@ -82,6 +83,7 @@ public class TimeShowStep(
     {
         State.ShowId = request.ShowId;
         State.DurationSeconds = request.DurationSeconds;
+        State.Render = request.Render;
         return ValueTask.CompletedTask;
     }
 
@@ -170,7 +172,7 @@ public class TimeShowStep(
         var audioAnalysisJson = ShowTimingData.BuildAudioAnalysisJson(wavPath, lyricsJson);
         ShowArtifactStore.WriteText(artifactStore.AudioAnalysisJson(showId), audioAnalysisJson);
 
-        await JobStepAppender.Append(this, chronicleClient, showId.Value, new ShowTimed(lyricsJson));
+        await JobStepAppender.Append(this, chronicleClient, showId.Value, new ShowTimed(lyricsJson, currentState.Render));
         return JobStepResult.Succeeded();
         }
         catch (Exception exception)

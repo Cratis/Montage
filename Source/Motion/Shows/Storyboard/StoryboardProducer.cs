@@ -15,16 +15,17 @@ namespace Motion.Shows.Storyboard;
 public sealed class StoryboardProducer(IJobsManagerAccessor jobs) : IReactor
 {
     /// <summary>
-    /// Produces the show from its saved storyboard. <c>[OnceOnly]</c> guards the job from being
-    /// started again when Chronicle replays this observer.
+    /// Puts a saved storyboard to work immediately: the voice is (re-)recorded, the words are
+    /// (re-)timed and the package (stills, preview data) is refreshed - so the timing is there
+    /// to work with the moment narration changes. The mp4 renders only when the save asked
+    /// for it. <c>[OnceOnly]</c> guards the job from being started again on replay.
     /// </summary>
     /// <param name="event">The save.</param>
     /// <param name="context">The event context.</param>
     /// <returns>Awaitable task.</returns>
     [OnceOnly]
     public Task On(ShowStoryboardSaved @event, EventContext context) =>
-        !@event.StartProduction
-            ? Task.CompletedTask
-            : jobs.For(context).Start<IVoiceoverSynthesisJob, VoiceoverSynthesisRequest>(new(
-                context.EventSourceId.Value));
+        jobs.For(context).Start<IVoiceoverSynthesisJob, VoiceoverSynthesisRequest>(new(
+            context.EventSourceId.Value,
+            @event.Render));
 }

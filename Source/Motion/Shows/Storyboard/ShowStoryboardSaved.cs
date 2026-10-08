@@ -12,6 +12,6 @@ namespace Motion.Shows.Storyboard;
 /// </summary>
 /// <param name="Voice">The TTS voice to speak the narration with.</param>
 /// <param name="PlanJson">The full plan as JSON - the same shape the planner produces.</param>
-/// <param name="StartProduction">True re-runs production (voice onward); a plain save only persists the story.</param>
+/// <param name="Render">True also renders the mp4; a plain save stops after packaging (voice, timing, stills, preview).</param>
 [EventType]
-public record ShowStoryboardSaved(string Voice, string PlanJson, bool StartProduction = true);
+public record ShowStoryboardSaved(string Voice, string PlanJson, bool Render = true);

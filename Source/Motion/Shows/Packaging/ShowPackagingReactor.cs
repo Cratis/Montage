@@ -24,7 +24,8 @@ public sealed class ShowPackagingReactor(IJobsManagerAccessor jobs) : IReactor
     [OnceOnly]
     public Task On(ShowTimed @event, EventContext context) =>
         jobs.For(context).Start<IShowPackagingJob, ShowPackagingRequest>(new(
-            ShowId.From(context.EventSourceId).Value.ToString()));
+            ShowId.From(context.EventSourceId).Value.ToString(),
+            @event.Render));
 
     /// <summary>
     /// Re-packages when the user asks for it.
@@ -35,5 +36,6 @@ public sealed class ShowPackagingReactor(IJobsManagerAccessor jobs) : IReactor
     [OnceOnly]
     public Task On(ShowPackagingRequested @event, EventContext context) =>
         jobs.For(context).Start<IShowPackagingJob, ShowPackagingRequest>(new(
-            ShowId.From(context.EventSourceId).Value.ToString()));
+            ShowId.From(context.EventSourceId).Value.ToString(),
+            Render: true));
 }

@@ -6,6 +6,7 @@ import { ambient } from '../core/canvas';
 import { fitText, font } from '../core/text';
 import { ease, clamp, inv } from '../core/util';
 import { withAlpha } from '../core/theme';
+import { enter, isPop, motionOf, slideOffset } from '../core/motion';
 
 export class Endcard extends Scene {
   private mark: HTMLImageElement | null = null;
@@ -55,16 +56,26 @@ export class Endcard extends Scene {
       const lh = fit.size * 1.16;
       const y0 = H / 2 - (fit.lines.length * lh) / 2;
       let delay = 0.5;
+      const motion = motionOf(params, 'rise');
       fit.lines.forEach((line, li) => {
-        const k = ease.outExpo(clamp(inv(delay, delay + 0.8, lt)));
+        const k = enter(motion, lt, delay, delay + 0.8);
+        const p = Math.min(k, 1);
         if (k > 0) {
           ctx.save();
-          ctx.globalAlpha = k;
+          ctx.globalAlpha = p;
           ctx.font = font(fit.size, theme.fontDisplay, 700);
           ctx.fillStyle = theme.ink;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'alphabetic';
-          ctx.fillText(line.text, W / 2, y0 + lh * (li + 1) - (lh - fit.size * 0.8) + (1 - k) * 24);
+          const y = y0 + lh * (li + 1) - (lh - fit.size * 0.8);
+          if (isPop(motion)) {
+            const s = Math.max(0.001, Math.min(k, 1.2));
+            ctx.translate(W / 2, y);
+            ctx.scale(s, s);
+            ctx.fillText(line.text, 0, 0);
+          } else {
+            ctx.fillText(line.text, W / 2 + slideOffset(motion, (1 - p) * 64), y + (1 - p) * 24);
+          }
           ctx.restore();
         }
         delay += 0.15;

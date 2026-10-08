@@ -28,7 +28,7 @@ public interface IPackageShowStep : IJobStep<ShowPackagingRequest, object, Packa
 /// <summary>
 /// What <see cref="ShowPackagingJob"/> was asked to do - package one show for the engine.
 /// </summary>
-public record ShowPackagingRequest(string ShowId) : IJobRequest;
+public record ShowPackagingRequest(string ShowId, bool Render = true) : IJobRequest;
 
 /// <summary>
 /// The persisted state for <see cref="PackageShowStep"/>.
@@ -37,6 +37,7 @@ public class PackageShowStepState : JobStepState
 {
     /// <summary>Gets or sets the identity of the show being packaged.</summary>
     public string ShowId { get; set; } = string.Empty;
+    public bool Render { get; set; } = true;
 }
 
 /// <summary>
@@ -77,6 +78,7 @@ public class PackageShowStep(
     protected override ValueTask InitializeState(ShowPackagingRequest request)
     {
         State.ShowId = request.ShowId;
+        State.Render = request.Render;
         return ValueTask.CompletedTask;
     }
 
@@ -132,7 +134,7 @@ public class PackageShowStep(
             logger.LogWarning(snapshotEx, "Scene stills failed for {ShowId} - the storyboard falls back to placeholders", showId.Value);
         }
 
-        await JobStepAppender.Append(this, chronicleClient, showId.Value, new ShowPackaged(packageDirectory, packageZip));
+        await JobStepAppender.Append(this, chronicleClient, showId.Value, new ShowPackaged(packageDirectory, packageZip, currentState.Render));
         return JobStepResult.Succeeded();
         }
         catch (Exception exception)

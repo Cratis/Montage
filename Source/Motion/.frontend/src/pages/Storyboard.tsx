@@ -8,6 +8,7 @@ import { Show } from '../../Api/Shows/Listing';
 import { All as AllJobs, JobActivity } from '../../Api/Shows/Production';
 import { JobRow } from './JobRow';
 import { SaveStoryboard } from '../../Api/Shows/Storyboard';
+import { SaveSceneTiming } from '../../Api/Shows/Timing/SaveSceneTiming';
 import { ShowPlan } from '../plan';
 
 /** One scene in the storyboard being edited. */
@@ -44,11 +45,14 @@ const TYPES: { value: string; label: string; hint: string }[] = [
 
 /** Motion presets a scene type understands (params.motion - also describable in the inspector). */
 const MOTION_PRESETS: Record<string, { value: string; label: string }[]> = {
+    title: [{ value: 'rise', label: 'Rise in' }, { value: 'pop', label: 'Pop with overshoot' }, { value: 'slide', label: 'Slide in' }, { value: 'fade', label: 'Fade in' }],
+    statement: [{ value: 'wipe', label: 'Character wipe' }, { value: 'pop', label: 'Pop in' }, { value: 'slide', label: 'Slide in' }, { value: 'fade', label: 'Fade in' }],
+    endcard: [{ value: 'rise', label: 'Rise in' }, { value: 'pop', label: 'Pop in' }, { value: 'fade', label: 'Fade in' }],
     chart: [{ value: 'grow', label: 'Grow from baseline' }, { value: 'pop', label: 'Pop with overshoot' }, { value: 'fade', label: 'Fade in' }],
     flow: [{ value: 'pop', label: 'Pop in sequence' }, { value: 'slide', label: 'Slide in' }, { value: 'fade', label: 'Fade in' }],
     metric: [{ value: 'count', label: 'Count up' }, { value: 'fade', label: 'Fade in' }],
     steps: [{ value: 'slide', label: 'Slide in' }, { value: 'fade', label: 'Fade in' }, { value: 'pop', label: 'Pop in' }],
-    compare: [{ value: 'slide', label: 'Slide in' }, { value: 'fade', label: 'Fade in' }],
+    compare: [{ value: 'slide', label: 'Slide in' }, { value: 'fade', label: 'Fade in' }, { value: 'pop', label: 'Pop panels' }],
 };
 
 /** The voice dropdown: what the text-to-speech service actually offers, with an audition button. */
@@ -350,7 +354,7 @@ export function StoryboardEditor({
                 title,
                 voice,
                 scenes: scenes.map((s) => ({ type: s.type, spoken: s.spoken, params: s.params })) as never,
-                startProduction: produce,
+                render: produce,
             } as never);
             const result = await command.execute();
             if (result.isSuccess) {
@@ -503,6 +507,313 @@ export function StoryboardEditor({
                     onClose={() => setInspecting(null)} />
             )}
         </>
+    );
+}
+
+/**
+ * The timing editor: the scene's own recording as a waveform, its words as draggable dots on a
+ * horizontal time axis, and a karaoke playhead - press play and watch which dots light up; drag
+ * any word that lands off its beat. Saving writes the words back into the lyrics data (and the
+ * packaged copy the preview reads), so the motion follows the edit without a re-run.
+ */
+function TimingEditor({ showId, sceneNumber, offset, duration, takeFile }: {
+    showId: string;
+    sceneNumber: number;
+    offset: number;
+    duration: number;
+    takeFile?: string;
+}) {
+    const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+    const dragRef = useRef<number | null>(null);
+    const [words, setWords] = useState<{ word: string; start: number; end: number; orig: number }[]>([]);
+    const [baseline, setBaseline] = useState<{ word: string; start: number; end: number; orig: number }[]>([]);
+    const [peaks, setPeaks] = useState<number[]>([]);
+    const [hover, setHover] = useState<number | null>(null);
+    const [playing, setPlaying] = useState(false);
+    const [playhead, setPlayhead] = useState(0);
+    const [dirty, setDirty] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const [error, setError] = useState('');
+    const [command, setValues] = SaveSceneTiming.use();
+
+    // the words the engine actually uses - from the packaged lyrics data, scene-local
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch(`/packages/${showId}/package/data/lyrics.json`);
+                if (!res.ok) return;
+                const doc = await res.json();
+                const flat = (doc.lines ?? [])
+                    .filter((l: any) => l.scene_id === `scene-${sceneNumber}`)
+                    .flatMap((l: any) => l.words ?? [])
+                    .map((w: any) => ({
+                        word: String(w.w ?? w.word ?? ''),
+                        start: Math.min(duration, Math.max(0, (Number(w.start) || 0) - offset)),
+                        end: Math.min(duration, Math.max(0.05, (Number(w.end) || 0) - offset)),
+                        orig: Math.min(duration, Math.max(0.05, (Number(w.end) || 0) - offset)),
+                    }))
+                    .sort((a: any, b: any) => a.start - b.start);
+                if (cancelled || flat.length === 0) return;
+                setWords(flat);
+                setBaseline(flat.map((w: any) => ({ ...w })));
+            } catch { /* the show hasn't been packaged yet */ }
+        })();
+        return () => { cancelled = true; };
+    }, [showId, sceneNumber, offset, duration]);
+
+    // the recording as peaks - the take when there is one, else the scene's slice of the mix
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const url = takeFile ? `/packages/${showId}/${takeFile}` : `/packages/${showId}/voiceover.wav`;
+                const res = await fetch(url);
+                if (!res.ok) return;
+                const buf = await res.arrayBuffer();
+                const Ctx = window.AudioContext;
+                const ctx = new Ctx();
+                const audio = await ctx.decodeAudioData(buf);
+                const skip = takeFile ? 0 : offset;
+                const from = Math.floor(skip * audio.sampleRate);
+                const to = Math.min(audio.length, Math.floor((skip + duration) * audio.sampleRate));
+                const channel = audio.getChannelData(0);
+                const buckets = 500;
+                const size = Math.max(1, Math.floor((to - from) / buckets));
+                const next: number[] = [];
+                for (let b = 0; b < buckets; b++) {
+                    let peak = 0;
+                    for (let i = from + b * size; i < Math.min(from + (b + 1) * size, to); i += 16) peak = Math.max(peak, Math.abs(channel[i] || 0));
+                    next.push(peak);
+                }
+                void ctx.close();
+                if (!cancelled) setPeaks(next);
+            } catch { /* no waveform - the dots still work */ }
+        })();
+        return () => { cancelled = true; };
+    }, [showId, takeFile, offset, duration]);
+
+    const draw = () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const parent = canvas.parentElement;
+        const W = canvas.width = (parent?.clientWidth ?? 800) * 2;
+        const H = canvas.height = 170 * 2;
+        const c = canvas.getContext('2d');
+        if (!c) return;
+        c.scale(2, 2);
+        const w = W / 2, h = H / 2;
+        const pad = 14;
+        const x = (t: number) => pad + (Math.min(t, duration) / Math.max(duration, 0.001)) * (w - pad * 2);
+        c.clearRect(0, 0, w, h);
+
+        // ruler
+        c.font = '9px "JetBrains Mono", monospace';
+        c.fillStyle = 'rgba(255,255,255,0.28)';
+        c.strokeStyle = 'rgba(255,255,255,0.08)';
+        for (let s = 0; s <= duration; s += 0.5) {
+            const px = x(s);
+            c.beginPath();
+            c.moveTo(px, 26); c.lineTo(px, 34);
+            c.stroke();
+            if (Math.abs(s % 1) < 0.01) c.fillText(`${Math.round(s)}s`, px - 4, 20);
+        }
+
+        // waveform
+        const waveTop = 88, waveBottom = 148, mid = (waveTop + waveBottom) / 2;
+        if (peaks.length > 0) {
+            c.fillStyle = 'rgba(140,124,246,0.34)';
+            const bw = (w - pad * 2) / peaks.length;
+            peaks.forEach((peak, i) => {
+                const amp = Math.max(1, peak * (waveBottom - waveTop) / 2);
+                c.fillRect(pad + i * bw, mid - amp, Math.max(1, bw - 0.5), amp * 2);
+            });
+        } else {
+            c.fillStyle = 'rgba(255,255,255,0.06)';
+            c.fillRect(pad, mid, w - pad * 2, 1);
+        }
+
+        // words: a dot per word, staggered vertically so neighbours stay readable
+        words.forEach((word, i) => {
+            const px = x(word.start);
+            const py = 58 + (i % 2) * 9;
+            const isActive = playing && playhead >= word.start && playhead < word.end;
+            const isPast = playhead >= word.end;
+            const isHot = hover === i || dragRef.current === i;
+            c.beginPath();
+            c.arc(px, py, isHot ? 5.5 : 4, 0, Math.PI * 2);
+            c.fillStyle = isHot || isActive ? '#8c7cf6' : isPast ? 'rgba(240,238,230,0.75)' : 'rgba(240,238,230,0.35)';
+            c.fill();
+            // stem down to the waveform - where the word sits in the recording
+            c.strokeStyle = isHot || isActive ? 'rgba(140,124,246,0.5)' : 'rgba(255,255,255,0.12)';
+            c.beginPath();
+            c.moveTo(px, py + 6); c.lineTo(px, waveTop - 2);
+            c.stroke();
+            if (isHot) {
+                const label = `${word.word} · ${word.start.toFixed(2)}s`;
+                const tw = c.measureText(label).width + 12;
+                const lx = Math.min(Math.max(px - tw / 2, 2), w - tw - 2);
+                c.fillStyle = 'rgba(11,13,18,0.92)';
+                c.strokeStyle = 'rgba(140,124,246,0.6)';
+                c.beginPath();
+                c.roundRect(lx, py + 12, tw, 18, 5);
+                c.fill(); c.stroke();
+                c.fillStyle = '#f0eee6';
+                c.fillText(label, lx + 6, py + 25);
+            }
+        });
+
+        // playhead
+        if (playing || playhead > 0) {
+            const px = x(playhead);
+            c.strokeStyle = '#8c7cf6';
+            c.beginPath();
+            c.moveTo(px, 32); c.lineTo(px, h - 8);
+            c.stroke();
+            c.fillStyle = '#8c7cf6';
+            c.beginPath();
+            c.moveTo(px - 4, 32); c.lineTo(px + 4, 32); c.lineTo(px, 38);
+            c.fill();
+        }
+    };
+
+    useEffect(draw);
+
+    // playback: the scene's own take, scene-local - the karaoke shows the drift live
+    useEffect(() => {
+        if (!playing) return;
+        let raf = 0;
+        const tick = () => {
+            setPlayhead(audioRef.current?.currentTime ?? 0);
+            raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(raf);
+    }, [playing]);
+
+    const toTime = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const pad = 14;
+        return Math.min(duration, Math.max(0, ((e.clientX - rect.left - pad) / (rect.width - pad * 2)) * duration));
+    };
+    const hitWord = (t: number) => {
+        let best = -1, bestDist = 12 / (canvasRef.current?.parentElement?.clientWidth ?? 800) * duration;
+        words.forEach((word, i) => {
+            const d = Math.abs(word.start - t);
+            if (d < bestDist) { best = i; bestDist = d; }
+        });
+        return best;
+    };
+
+    const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        const hit = hitWord(toTime(e));
+        if (hit < 0) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        dragRef.current = hit;
+        setHover(hit);
+        draw();
+    };
+    const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        const t = toTime(e);
+        if (dragRef.current === null) {
+            const hit = hitWord(t);
+            if (hit !== hover) { setHover(hit); draw(); }
+            return;
+        }
+        const i = dragRef.current;
+        setWords((prev) => {
+            const next = [...prev];
+            const word = { ...next[i] };
+            const snapped = Math.round(t * 50) / 50;
+            const lo = i > 0 ? next[i - 1].start + 0.04 : 0;
+            const hi = i < next.length - 1 ? next[i + 1].start - 0.04 : duration - 0.05;
+            word.start = Math.min(Math.max(snapped, lo), Math.max(lo, hi));
+            word.end = Math.min(duration, word.start + (word.orig || 0.2));
+            next[i] = word;
+            setDirty(true);
+            return next;
+        });
+        draw();
+    };
+    const onPointerUp = () => { dragRef.current = null; draw(); };
+
+    const play = () => {
+        const url = takeFile ? `/packages/${showId}/${takeFile}` : `/packages/${showId}/voiceover.wav`;
+        if (!audioRef.current) {
+            audioRef.current = new Audio(url);
+            audioRef.current.onended = () => setPlaying(false);
+        }
+        const audio = audioRef.current;
+        if (playing) { audio.pause(); setPlaying(false); return; }
+        if (!takeFile) audio.currentTime = offset + playhead;
+        else if (audio.currentSrc !== url) audio.src = url;
+        if (playhead >= duration - 0.05) { audio.currentTime = takeFile ? 0 : offset; setPlayhead(0); }
+        void audio.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+    };
+
+    const save = async () => {
+        setError('');
+        try {
+            setValues({
+                showId,
+                sceneNumber,
+                words: words.map((w) => ({ word: w.word, start: +(w.start + offset).toFixed(3), end: +(w.end + offset).toFixed(3) })),
+            } as never);
+            const result = await command.execute();
+            if (result.isSuccess) {
+                setBaseline(words.map((w) => ({ ...w })));
+                setDirty(false);
+                setSaved(true);
+                setTimeout(() => setSaved(false), 2500);
+            } else {
+                const problems = [...result.validationResults.map((v) => v.message), ...result.exceptionMessages].filter(Boolean);
+                setError(problems.join('; ') || 'The timing could not be saved.');
+            }
+        } catch (err) {
+            setError(String((err as Error)?.message ?? err));
+        }
+    };
+
+    const reset = () => {
+        setWords(baseline.map((w) => ({ ...w })));
+        setDirty(false);
+    };
+
+    return (
+        <div className='flex flex-col gap-3'>
+            <div className='flex items-center gap-2'>
+                <button
+                    className='w-9 h-9 rounded-full border border-[rgba(255,255,255,0.16)] grid place-items-center hover:border-[var(--cr-motion-violet)] text-sm'
+                    title={playing ? 'Stop' : 'Play the recording — watch which words light up'}
+                    onClick={play}>{playing ? '❙❙' : '▶'}</button>
+                <span className='text-xs text-[var(--cr-motion-faint)] flex-1'>
+                    Drag a word onto the beat it belongs to. Hover to see it. The violet line is the
+                    playhead — a word lighting up late or early is a word to drag.
+                </span>
+                {dirty && (
+                    <>
+                        <Button label='Reset' severity='secondary' outlined onClick={reset} />
+                        <Button label='Save timing' icon='pi pi-check' onClick={save} />
+                    </>
+                )}
+                {saved && <span className='mono text-[11px] text-[var(--cr-motion-violet)]'>saved — the preview already uses it</span>}
+            </div>
+            <canvas
+                ref={canvasRef}
+                className='w-full rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] touch-none select-none'
+                style={{ height: 170 }}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerLeave={() => { if (dragRef.current === null) setHover(null); }} />
+            {error && <p className='text-sm text-[#e5484d]'>{error}</p>}
+            <div className='mono text-[11px] text-[var(--cr-motion-faint)] flex gap-4'>
+                <span>{words.length} words</span>
+                <span>scene window {offset.toFixed(2)}s → {(offset + duration).toFixed(2)}s</span>
+                <span>{takeFile ? `take ${takeFile.split('/').pop()}` : 'mixed track'}</span>
+            </div>
+        </div>
     );
 }
 
@@ -687,40 +998,33 @@ function SceneInspector({
                             </>
                         ) : (
                             <p className='text-sm text-[var(--cr-motion-dim)]'>
-                                This scene type has no infographic motion presets — it animates its text by itself.
+                                This scene is word-timed — the narration itself drives its motion, word by word.
                             </p>
                         )}
                 </div>
 
                 <div className='flex flex-col gap-2 text-sm' style={panelStyle('timing')}>
-                        {meta ? (
-                            <>
-                                <Row label='Starts at' value={`${meta.offset.toFixed(2)}s into the show`} />
-                                <Row label='Spoken for' value={`${meta.duration.toFixed(2)}s`} />
-                                <Row label='Words' value={`${wordsIn(meta.spoken)} (${(wordsIn(meta.spoken) / Math.max(0.1, meta.duration)).toFixed(1)}/s)`} />
-                                <Row label='Take' value={meta.file} />
-                                <p className='text-xs text-[var(--cr-motion-faint)] mt-2'>
-                                    Word-level time codes come from transcribing this scene's own recording,
-                                    so karaoke text and per-word motion land exactly on the voice.
-                                </p>
-                            </>
-                        ) : (
+                    {meta ? (
+                        <TimingEditor
+                            showId={showId}
+                            sceneNumber={sceneNumber}
+                            offset={meta.offset}
+                            duration={meta.duration}
+                            takeFile={meta.file} />
+                    ) : (
+                        <div className='flex flex-col gap-2'>
                             <p className='text-[var(--cr-motion-dim)]'>
                                 The show hasn't spoken yet — save & render to get this scene's recording and timing.
                             </p>
-                        )}
+                            <p className='text-xs text-[var(--cr-motion-faint)]'>
+                                Once it has, this tab becomes a timeline: the recording as a waveform, each
+                                word a dot you can drag onto the beat it belongs to.
+                            </p>
+                        </div>
+                    )}
                 </div>
                 </div>
             </div>
-        </div>
-    );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-    return (
-        <div className='flex items-center gap-4 py-1.5 border-b border-[rgba(255,255,255,0.05)]'>
-            <span className='eyebrow w-32'>{label}</span>
-            <span className='mono text-xs'>{value}</span>
         </div>
     );
 }

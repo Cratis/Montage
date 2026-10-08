@@ -67,14 +67,14 @@ export class Player {
     }
   }
 
-  /** Play exactly one plate: seek to its start, confine to its window, stop at its end (or loop). */
+  /** Play exactly one plate: seek to its start, confine to its window, stop at its end (or loop).
+   *  Does not autoplay - the host parks on the scene's first frame and the user presses play. */
   playPlate(id: string, loop = false) {
     const entry = this.engine.timeline.find((e) => e.id === id) ?? this.engine.timeline[id as unknown as number];
     if (!entry) return;
     this.loopPlate = loop;
     this.plateRange = { id: entry.id, start: entry.start, end: entry.end };
     this.seek(entry.start + 0.001);
-    if (!this.playing) this.toggle();
     this.ensureLoop();
   }
 
@@ -91,9 +91,16 @@ export class Player {
 
   toggle() {
     this.playing = !this.playing;
+    if (this.playing) {
+      // parked at the end (or past it): replay from the top of the window
+      const end = this.plateRange?.end ?? this.engine.duration;
+      const from = this.plateRange?.start ?? 0;
+      if (this.t >= end - 0.01) this.seek(from + 0.001);
+      void this.audio?.play().catch(() => {});
+    } else {
+      this.audio?.pause();
+    }
     this.lastNow = performance.now();
-    if (this.playing) void this.audio?.play().catch(() => {});
-    else this.audio?.pause();
     this.syncPlayBtn();
   }
 
@@ -157,7 +164,11 @@ export class Player {
     this.bar.max = '1000';
     this.bar.value = '0';
     this.bar.style.cssText = 'flex:1;accent-color:#8c7cf6;cursor:pointer';
-    this.bar.oninput = () => this.seek((+this.bar.value / 1000) * this.engine.duration);
+    this.bar.oninput = () => {
+      const from = this.plateRange?.start ?? 0;
+      const to = this.plateRange?.end ?? this.engine.duration;
+      this.seek(from + (+this.bar.value / 1000) * (to - from));
+    };
     this.label = document.createElement('span');
     this.label.style.cssText = 'min-width:190px;text-align:right;white-space:nowrap';
     this.ui.append(this.playBtn, this.bar, this.label);
@@ -169,8 +180,15 @@ export class Player {
   }
 
   private updateUi(sceneId: string) {
-    this.bar.value = String(Math.round((this.t / Math.max(this.engine.duration, 0.001)) * 1000));
+    // in plate mode the HUD is scoped to the scene: its length, its zero point, its name -
+    // not the full show the scene happens to sit inside
+    const from = this.plateRange?.start ?? 0;
+    const to = this.plateRange?.end ?? this.engine.duration;
+    const len = Math.max(0.001, to - from);
+    const shown = Math.min(Math.max(this.t - from, 0), len);
+    this.bar.value = String(Math.round((shown / len) * 1000));
     const mm = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-    this.label.textContent = `${mm(this.t)} / ${mm(this.engine.duration)} \u00B7 ${sceneId}${this.loopPlate ? ' \u00B7 loop' : ''}`;
+    const id = this.plateRange?.id ?? sceneId;
+    this.label.textContent = `${mm(shown)} / ${mm(len)} \u00B7 ${id}${this.loopPlate ? ' \u00B7 loop' : ''}`;
   }
 }

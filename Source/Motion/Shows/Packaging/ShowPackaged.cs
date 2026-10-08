@@ -11,7 +11,7 @@ namespace Motion.Shows.Packaging;
 /// <param name="PackageDirectory">Unpacked package directory, relative to the show folder.</param>
 /// <param name="PackageZip">Path of the zip, relative to the show folder.</param>
 [EventType]
-public record ShowPackaged(string PackageDirectory, string PackageZip);
+public record ShowPackaged(string PackageDirectory, string PackageZip, bool Render = true);
 
 /// <summary>
 /// Occurs when the user asks for the package to be rebuilt.

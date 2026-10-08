@@ -5,6 +5,7 @@ import { Scene, type Frame } from '../core/scene';
 import { ambient, eyebrow } from '../core/canvas';
 import { fitText, font, type TextLine } from '../core/text';
 import { ease, clamp, inv } from '../core/util';
+import { enter, isFade, isPop, motionOf, slideOffset } from '../core/motion';
 
 export class Statement extends Scene {
   override render(f: Frame, ctx: CanvasRenderingContext2D): void {
@@ -21,22 +22,31 @@ export class Statement extends Scene {
     const blockH = fit.lines.length * lh;
     const y0 = H / 2 - blockH / 2;
 
-    // char-level wipe reveal per line, staggered
+    // char-level wipe reveal per line, staggered - or the storyboard's motion preset
     let lineDelay = 0.2;
+    const motion = motionOf(params, 'wipe');
     fit.lines.forEach((line: TextLine, li: number) => {
-      const k = ease.outCubic(clamp(inv(lineDelay, lineDelay + 0.9, lt)));
+      const k = enter(motion, lt, lineDelay, lineDelay + 0.9);
+      const p = Math.min(k, 1);
       ctx.save();
       ctx.font = font(fit.size, theme.fontDisplay, 600);
       ctx.textBaseline = 'alphabetic';
       ctx.textAlign = 'center';
-      const x = W / 2;
       const y = y0 + lh * (li + 1) - (lh - fit.size * 0.8);
+      ctx.translate(W / 2, y);
+      if (isPop(motion)) {
+        const s = Math.max(0.001, Math.min(k, 1.18));
+        ctx.scale(s, s);
+      } else if (!isFade(motion)) {
+        ctx.translate(slideOffset(motion, (1 - p) * 72), 0);
+      }
+      ctx.globalAlpha = p;
       const shown = Math.round(line.text.length * k);
       const visible = line.text.slice(0, shown);
       if (accentPhrase && line.text.includes(accentPhrase)) {
         // draw the line, then overpaint the accent phrase
         ctx.fillStyle = theme.ink;
-        ctx.fillText(visible, x, y);
+        ctx.fillText(visible, 0, 0);
         const idx = line.text.indexOf(accentPhrase);
         const beforeW = ctx.measureText(line.text.slice(0, idx)).width;
         const phraseW = ctx.measureText(accentPhrase).width;
@@ -44,15 +54,15 @@ export class Statement extends Scene {
         if (shownInPhrase > 0) {
           ctx.save();
           ctx.beginPath();
-          ctx.rect(x - ctx.measureText(line.text).width / 2 + beforeW, y - fit.size, phraseW * (shownInPhrase / accentPhrase.length) + 2, fit.size * 1.6);
+          ctx.rect(-ctx.measureText(line.text).width / 2 + beforeW, -fit.size, phraseW * (shownInPhrase / accentPhrase.length) + 2, fit.size * 1.6);
           ctx.clip();
           ctx.fillStyle = theme.accent;
-          ctx.fillText(visible, x, y);
+          ctx.fillText(visible, 0, 0);
           ctx.restore();
         }
       } else {
         ctx.fillStyle = theme.ink;
-        ctx.fillText(visible, x, y);
+        ctx.fillText(visible, 0, 0);
       }
       ctx.restore();
       lineDelay += 0.18;

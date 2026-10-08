@@ -5,6 +5,7 @@ import { Scene, type Frame } from '../core/scene';
 import { ambient, eyebrow } from '../core/canvas';
 import { fitText, font, wrap, drawWrapped, type TextLine } from '../core/text';
 import { ease, clamp, inv } from '../core/util';
+import { enter, isFade, isPop, motionOf, slideOffset } from '../core/motion';
 
 export class Title extends Scene {
   override render(f: Frame, ctx: CanvasRenderingContext2D): void {
@@ -30,6 +31,7 @@ export class Title extends Scene {
     // per-word reveal across the whole headline, staggered by global word index
     let wordIdx = 0;
     const totalWords = Math.max(1, fit.lines.reduce((a, l) => a + l.text.split(' ').length, 0));
+    const motion = motionOf(params, 'rise');
 
     ctx.textBaseline = 'alphabetic';
     fit.lines.forEach((line, li) => {
@@ -41,14 +43,20 @@ export class Title extends Scene {
       for (const w of words) {
         const i = wordIdx++;
         const delay = 0.25 + i * (1.4 / totalWords);
-        const k = ease.outExpo(clamp(inv(delay, delay + 0.7, lt)));
+        const k = enter(motion, lt, delay, delay + 0.7);
         const wordW = ctx.measureText(w).width;
         if (k > 0) {
           const isEmph = !!emphasis && w.toLowerCase().includes(emphasis.toLowerCase());
+          const p = Math.min(k, 1);
           ctx.save();
           ctx.translate(x + wordW / 2, y);
-          ctx.translate(0, (1 - k) * size * 0.55);
-          ctx.globalAlpha = k;
+          if (isPop(motion)) {
+            const s = Math.max(0.001, Math.min(k, 1.22));
+            ctx.scale(s, s);
+          } else if (!isFade(motion)) {
+            ctx.translate(slideOffset(motion, (1 - p) * 64), (1 - p) * size * 0.55);
+          }
+          ctx.globalAlpha = p;
           ctx.fillStyle = isEmph ? theme.accent : theme.ink;
           ctx.textAlign = 'center';
           ctx.fillText(w, 0, 0);

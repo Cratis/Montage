@@ -6,6 +6,7 @@ import { ambient, panel, eyebrow } from '../core/canvas';
 import { font, ellipsize, wrap } from '../core/text';
 import { ease, clamp, inv } from '../core/util';
 import { withAlpha } from '../core/theme';
+import { enter, isPop, motionOf, slideOffset } from '../core/motion';
 
 export class Compare extends Scene {
   override render(f: Frame, ctx: CanvasRenderingContext2D): void {
@@ -39,12 +40,21 @@ export class Compare extends Scene {
     const y0 = (hasHead ? H * 0.2 : H * 0.16) + 26;
     const lx = W * 0.07, rx = lx + panelW + gap;
 
+    const motion = motionOf(params, 'slide');
     const drawPanel = (p: any, x: number, accent: boolean, delay: number, tag: string) => {
-      const k = ease.outExpo(clamp(inv(delay, delay + 0.7, lt)));
+      const k = enter(motion, lt, delay, delay + 0.7);
+      const pr = Math.min(k, 1);
       if (k <= 0) return;
       ctx.save();
-      ctx.globalAlpha = k;
-      ctx.translate(0, (1 - k) * 24);
+      ctx.globalAlpha = pr;
+      if (isPop(motion)) {
+        const s = Math.max(0.001, Math.min(k, 1.1));
+        ctx.translate(x + panelW / 2, y0 + panelH / 2);
+        ctx.scale(s, s);
+        ctx.translate(-(x + panelW / 2), -(y0 + panelH / 2));
+      } else {
+        ctx.translate(slideOffset(motion, (1 - pr) * 48), (1 - pr) * 24);
+      }
       panel(ctx, x, y0, panelW, panelH, theme, { accent: accent ? theme.accent : undefined, radius: 20 });
 
       // tag: mono eyebrow inside the panel

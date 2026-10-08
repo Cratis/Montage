@@ -34,6 +34,7 @@ var chronicle = builder
     .WithEndpoint(port: 35000, targetPort: 35000, name: "grpc")
     .WithEnvironment("Cratis__Chronicle__Storage__Type", "MongoDB")
     .WithEnvironment(context => context.EnvironmentVariables["Cratis__Chronicle__Storage__ConnectionDetails"] = mongodb.Resource.ConnectionStringExpression)
+
     // The pipeline's stages legitimately run long (a render takes minutes) and always answer —
     // success or a failure event — so the subscriber waits indefinitely instead of timing out.
     .WithEnvironment("Cratis__Chronicle__Observers__SubscriberTimeout", "0");
@@ -51,6 +52,7 @@ var chronicleReady = builder
 // word by word (OpenAI-compatible /v1/audio/transcriptions on faster-whisper). Fixed host
 // ports so the Cratis:Motion defaults in appsettings.json work without configuration; the
 // transcriber downloads its model on first use, cached in a volume the compose file shares.
+
 var tts = builder
     .AddContainer("tts", "ghcr.io/remsky/kokoro-fastapi-cpu", "v0.9.0")
     // lambda form: the parameter form leaves the host port dynamic, which silently sends the
@@ -95,10 +97,14 @@ builder
     .WithEndpoint("http", endpoint => endpoint.Port = 5000)
     .WithEnvironment("Cratis__Chronicle__ConnectionString", "chronicle://localhost:35000")
     .WithEnvironment("Cratis__MongoDB__Server", mongodb.Resource.ConnectionStringExpression)
+
     // the speech containers get dynamic host ports, so hand the editor their allocated
     // endpoints (services__*__http__0) - Motion prefers them over the configured defaults
-    .WithReference(tts)
-    .WithReference(stt)
+    .WithEnvironment(context =>
+    {
+        context.EnvironmentVariables["services__tts__http__0"] = tts.GetEndpoint("http");
+        context.EnvironmentVariables["services__stt__http__0"] = stt.GetEndpoint("http");
+    })
     .WaitFor(tts)
     .WaitFor(stt)
     .WaitFor(chronicle)

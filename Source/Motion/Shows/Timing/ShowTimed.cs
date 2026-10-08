@@ -10,7 +10,7 @@ namespace Motion.Shows.Timing;
 /// </summary>
 /// <param name="LyricsJson">Word-timed lyrics (lines, words, seconds).</param>
 [EventType]
-public record ShowTimed(string LyricsJson);
+public record ShowTimed(string LyricsJson, bool Render = true);
 
 /// <summary>
 /// Occurs when the user asks for timing (alignment + analysis) to be re-run.

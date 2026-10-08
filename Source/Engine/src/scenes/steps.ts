@@ -8,6 +8,7 @@ import { ambient, panel } from '../core/canvas';
 import { font, ellipsize } from '../core/text';
 import { ease, clamp, inv, lerp } from '../core/util';
 import { withAlpha } from '../core/theme';
+import { enter, isFade, motionOf, slideOffset } from '../core/motion';
 
 interface Step { title: string; text?: string; spoken?: string }
 
@@ -15,6 +16,7 @@ export class Steps extends Scene {
   override render(f: Frame, ctx: CanvasRenderingContext2D): void {
     const { W, H, theme, params, lyrics } = this.ctx;
     const t = f.t, lt = f.lt;
+    const motion = motionOf(this.ctx.params, 'slide');
     ambient(ctx, W, H, theme, t);
 
     const steps: Step[] = Array.isArray(params.steps) ? params.steps : [];
@@ -75,18 +77,20 @@ export class Steps extends Scene {
       const isPast = i < active;
       const rowY = y0 + i * rowH;
 
-      // step activation: pops when it becomes active
+      // step activation: pops when it becomes active - or arrives per the motion preset
       const becomeT = i === 0 ? 0.15 : undefined;
-      const enterK = ease.outCubic(clamp(inv(becomeT ?? 0, (becomeT ?? 0) + 0.5, lt)));
+      const enterK = enter(motion, lt, becomeT ?? 0, (becomeT ?? 0) + 0.5);
+      const p = Math.min(enterK, 1);
       const act = isActive ? clamp(inv(-1, 0.0001, -1) /* placeholder */, 0, 1) : 0;
       void act;
 
-      const slide = isActive ? (1 - enterK) * 12 : 0;
+      const slide = isActive ? (1 - p) * 12 + slideOffset(motion, (1 - p) * 40) : 0;
 
       ctx.save();
       if (isActive) {
         // panel behind the active row
         panel(ctx, x0 - 18, rowY - 8, listW + 36, rowH - 4, theme, { accent: theme.accent, radius: 16 });
+        if (isFade(motion)) ctx.globalAlpha = Math.max(0, p);
       }
       ctx.translate(slide, 0);
 

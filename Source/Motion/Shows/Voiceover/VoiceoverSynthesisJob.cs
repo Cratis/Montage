@@ -31,7 +31,7 @@ public interface ISynthesizeVoiceoverStep : IJobStep<VoiceoverSynthesisRequest, 
 /// <summary>
 /// What <see cref="VoiceoverSynthesisJob"/> was asked to do - speak one show.
 /// </summary>
-public record VoiceoverSynthesisRequest(string ShowId) : IJobRequest;
+public record VoiceoverSynthesisRequest(string ShowId, bool Render = true) : IJobRequest;
 
 /// <summary>
 /// The persisted state for <see cref="SynthesizeVoiceoverStep"/>.
@@ -40,6 +40,7 @@ public class SynthesizeVoiceoverStepState : JobStepState
 {
     /// <summary>Gets or sets the identity of the show being spoken.</summary>
     public string ShowId { get; set; } = string.Empty;
+    public bool Render { get; set; } = true;
 }
 
 /// <summary>
@@ -83,6 +84,7 @@ public class SynthesizeVoiceoverStep(
     protected override ValueTask InitializeState(VoiceoverSynthesisRequest request)
     {
         State.ShowId = request.ShowId;
+        State.Render = request.Render;
         return ValueTask.CompletedTask;
     }
 
@@ -105,7 +107,7 @@ public class SynthesizeVoiceoverStep(
         var voice = await VoiceOf(shows, showId);
         var (audioPath, duration) = await Synthesize(synthesizer, ffmpeg, artifactStore, showId, planJson, voice, cancellationToken);
 
-        await JobStepAppender.Append(this, chronicleClient, showId.Value, new VoiceoverSynthesized(audioPath, duration));
+        await JobStepAppender.Append(this, chronicleClient, showId.Value, new VoiceoverSynthesized(audioPath, duration, currentState.Render));
         return JobStepResult.Succeeded();
         }
         catch (Exception exception)
