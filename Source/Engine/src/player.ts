@@ -37,9 +37,18 @@ export class Player {
 
   get current(): number { return this.t; }
 
+  private loopRunning = false;
+
+  /** The rAF loop runs for the lifetime of the page once started. */
+  private ensureLoop() {
+    if (this.loopRunning) return;
+    this.loopRunning = true;
+    requestAnimationFrame(this.tick);
+  }
+
   start(t = 0) {
     this.seek(t);
-    this.raf = requestAnimationFrame(this.tick);
+    this.ensureLoop();
     this.render();
   }
 
@@ -66,6 +75,7 @@ export class Player {
     this.plateRange = { id: entry.id, start: entry.start, end: entry.end };
     this.seek(entry.start + 0.001);
     if (!this.playing) this.toggle();
+    this.ensureLoop();
   }
 
   private jumpPlate(dir: 1 | -1) {
@@ -98,13 +108,17 @@ export class Player {
     this.render();
   }
 
-  private tick(now: number) {
+  private tick() {
     this.raf = requestAnimationFrame(this.tick);
     if (this.playing) {
+      // wall clock, not the rAF timestamp - some environments hand out frozen timestamps
+      const now = performance.now();
       const dt = (now - this.lastNow) / 1000;
       this.lastNow = now;
       this.t += dt;
-      if (this.audio && Math.abs(this.audio.currentTime - this.t) > 0.25) this.t = this.audio.currentTime;
+      // pin to the voice only while it is actually playing - when the browser blocks
+      // autoplay the audio sits at zero and would freeze the whole show on frame one
+      if (this.audio && !this.audio.paused && Math.abs(this.audio.currentTime - this.t) > 0.25) this.t = this.audio.currentTime;
       const range = this.plateRange ?? (this.loopPlate ? this.plateAt(this.t) : null);
       const end = range ? range.end : this.engine.duration;
       if (this.t >= end) {

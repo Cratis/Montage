@@ -53,7 +53,13 @@ var chronicleReady = builder
 // transcriber downloads its model on first use, cached in a volume the compose file shares.
 var tts = builder
     .AddContainer("tts", "ghcr.io/remsky/kokoro-fastapi-cpu", "v0.9.0")
-    .WithEndpoint(port: 8880, targetPort: 8880, name: "http");
+    // lambda form: the parameter form leaves the host port dynamic, which silently sends the
+    // editor to whatever else listens on the configured port (the mock services) instead
+    .WithEndpoint("http", endpoint =>
+    {
+        endpoint.Port = 8880;
+        endpoint.TargetPort = 8880;
+    });
 
 // Kokoro loads its model lazily on the first speech request, and the first requests after a
 // container start can come back near-silent — so gate the editor on a warm-up synthesis (the
@@ -66,7 +72,11 @@ var ttsReady = builder
 
 var stt = builder
     .AddContainer("stt", "ghcr.io/speaches-ai/speaches", "0.9.0-rc.3-cpu")
-    .WithEndpoint(port: 8770, targetPort: 8000, name: "http")
+    .WithEndpoint("http", endpoint =>
+    {
+        endpoint.Port = 8770;
+        endpoint.TargetPort = 8000;
+    })
     .WithEnvironment("WHISPER__MODEL", "Systran/faster-whisper-tiny.en")
     .WithVolume("motion-hf-cache", "/home/ubuntu/.cache/huggingface/hub");
 
@@ -85,6 +95,10 @@ builder
     .WithEndpoint("http", endpoint => endpoint.Port = 5000)
     .WithEnvironment("Cratis__Chronicle__ConnectionString", "chronicle://localhost:35000")
     .WithEnvironment("Cratis__MongoDB__Server", mongodb.Resource.ConnectionStringExpression)
+    // the speech containers get dynamic host ports, so hand the editor their allocated
+    // endpoints (services__*__http__0) - Motion prefers them over the configured defaults
+    .WithReference(tts)
+    .WithReference(stt)
     .WaitFor(tts)
     .WaitFor(stt)
     .WaitFor(chronicle)

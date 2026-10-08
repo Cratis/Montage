@@ -102,6 +102,19 @@ async function boot() {
   window.addEventListener('message', (e) => {
     if (e.data === 'motion:pause') player.pause();
   });
+
+  // opened from the editor's package panel: keep a visible way back to the show
+  const back = params.get('back');
+  if (back && !exportMode) {
+    const chip = document.createElement('a');
+    chip.href = back;
+    chip.textContent = '\u2190 back to show';
+    chip.style.cssText = 'position:fixed;top:16px;left:18px;z-index:30;font:500 13px "JetBrains Mono",monospace;color:#9aa1b0;text-decoration:none;padding:8px 14px;border:1px solid rgba(255,255,255,0.14);border-radius:999px;background:rgba(11,13,18,0.78);backdrop-filter:blur(6px)';
+    chip.onmouseenter = () => { chip.style.color = '#f0eee6'; };
+    chip.onmouseleave = () => { chip.style.color = '#9aa1b0'; };
+    document.body.appendChild(chip);
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') location.href = back; });
+  }
 }
 
 boot().catch((e) => fail(String((e as Error)?.stack ?? e)));

@@ -8,6 +8,15 @@ using Motion.Hosting;
 using AspNetCoreArcBuilderExtensions = Microsoft.AspNetCore.Builder.ArcBuilderExtensions;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// The speech containers get dynamic host ports under Aspire, which injects their allocated
+// endpoints as services__<name>__http__0. Prefer those over the configured defaults so the
+// pipeline always talks to the real Kokoro/Speaches, not whatever shares their port.
+foreach (var (service, section) in new[] { ("tts", "Tts"), ("stt", "Stt") })
+{
+    var endpoint = builder.Configuration[$"services__{service}__http__0"];
+    if (!string.IsNullOrWhiteSpace(endpoint)) builder.Configuration[$"Cratis:Motion:{section}:Endpoint"] = $"http://{endpoint}";
+}
 builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: false);
 
 builder.Services.AddOptions<MotionOptions>().BindConfiguration("Cratis:Motion").ValidateDataAnnotations();

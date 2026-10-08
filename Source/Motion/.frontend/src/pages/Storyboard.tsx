@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@cratis/components/Common';
 import { Show } from '../../Api/Shows/Listing';
+import { All as AllJobs, JobActivity } from '../../Api/Shows/Production';
+import { JobRow } from './JobRow';
 import { SaveStoryboard } from '../../Api/Shows/Storyboard';
 import { ShowPlan } from '../plan';
 
@@ -152,10 +154,11 @@ function ListField({ label, value, onChange, placeholder }: { label: string; val
  * error state (passed down).
  */
 export function StoryboardEditor({
-    show, registerSave, busy, setBusy, saveError, setSaveError,
+    show, registerSave, registerDirty, busy, setBusy, saveError, setSaveError,
 }: {
     show: Show;
     registerSave: (save: (produce: boolean) => void) => void;
+    registerDirty: (dirty: boolean) => void;
     busy: boolean;
     setBusy: (busy: boolean) => void;
     saveError: string;
@@ -170,10 +173,18 @@ export function StoryboardEditor({
     const [loadedFor, setLoadedFor] = useState<string>('');
     const [command, setValues] = SaveStoryboard.use();
     const [inspecting, setInspecting] = useState<number | null>(null);
+    const [jobs] = AllJobs.use();
+    const showJobs = jobs.data
+        .filter((job: JobActivity) => job.showId === id)
+        .sort((a: JobActivity, b: JobActivity) => new Date(b.created).getTime() - new Date(a.created).getTime());
 
     // production artifacts: per-scene voice metadata + the engine's mid-scene stills
     const [sceneMeta, setSceneMeta] = useState<Record<number, SceneMeta>>({});
     const [snapshots, setSnapshots] = useState<Record<number, string>>({});
+
+    // unsaved changes: everything after the last load/save counts, reported to the page
+    // so leaving the tab can ask whether to discard or generate
+    const savedSnapshot = useRef('');
 
     // drag & drop
     const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -190,7 +201,17 @@ export function StoryboardEditor({
         setTitle(plan?.title || show.title);
         setVoice(show.voice || 'af_heart');
         setScenes((plan?.scenes ?? []).map((s) => ({ type: s.type, spoken: s.spoken ?? '', params: { ...(s.params ?? {}) } })));
+        savedSnapshot.current = '';
     }, [show, plan, loadedFor]);
+
+    const [snapshotSeeded, setSnapshotSeeded] = useState(false);
+    useEffect(() => {
+        if (!loadedFor || snapshotSeeded || scenes.length === 0) return;
+        if (savedSnapshot.current === '') {
+            savedSnapshot.current = JSON.stringify({ title, voice, scenes });
+            setSnapshotSeeded(true);
+        }
+    }, [loadedFor, snapshotSeeded, title, voice, scenes]);
 
     // production artifacts exist after the pipeline has spoken and packaged - refresh on status change
     useEffect(() => {
@@ -311,6 +332,12 @@ export function StoryboardEditor({
     // the show page header owns the Save buttons - keep the closure it holds current
     useEffect(() => { registerSave(save); });
 
+    // and the page asks before discarding unsaved edits
+    useEffect(() => {
+        if (!snapshotSeeded) return;
+        registerDirty(JSON.stringify({ title, voice, scenes }) !== savedSnapshot.current);
+    });
+
     const totalWords = scenes.reduce((sum, s) => sum + wordsIn(s.spoken), 0);
 
     const save = async (produce: boolean) => {
@@ -327,7 +354,7 @@ export function StoryboardEditor({
             } as never);
             const result = await command.execute();
             if (result.isSuccess) {
-                // plain save: stay put - the header buttons settle and the page reflects the show
+                savedSnapshot.current = JSON.stringify({ title, voice, scenes });
             } else {
                 const problems = [...result.validationResults.map((v) => v.message), ...result.exceptionMessages].filter(Boolean);
                 setSaveError(problems.length > 0 ? problems.join('; ') : 'The storyboard could not be saved.');
@@ -469,6 +496,7 @@ export function StoryboardEditor({
                     index={inspecting}
                     scene={scenes[inspecting]}
                     meta={sceneMeta[inspecting + 1]}
+                    jobs={showJobs}
                     onChange={(patch) => update(inspecting, patch)}
                     onParam={(key, value) => setParam(inspecting, key, value)}
                     onProduce={() => void save(true)}
@@ -492,12 +520,13 @@ const TABS = [
  * scene has - content parameters, narration, motion preset and description, recorded timing.
  */
 function SceneInspector({
-    show, index, scene, meta, onChange, onParam, onProduce, onClose,
+    show, index, scene, meta, jobs, onChange, onParam, onProduce, onClose,
 }: {
     show: Show;
     index: number;
     scene: Scene;
     meta?: SceneMeta;
+    jobs: JobActivity[];
     onChange: (patch: Partial<Scene>) => void;
     onParam: (key: string, value: unknown) => void;
     onProduce: () => void;
@@ -547,6 +576,9 @@ function SceneInspector({
                     ))}
                 </div>
 
+                {/* every panel stacked in one grid cell: the dialog is sized by the tallest
+                    tab and switching never resizes it; hidden panels keep that size */}
+                <div className='grid items-start'>
                 <div className='flex flex-col gap-3' style={panelStyle('preview')}>
                         <iframe
                             ref={iframeRef}
@@ -582,6 +614,14 @@ function SceneInspector({
                                         : 'This scene has no voice recording yet.'}
                                 </span>
                                 <Button label='Save & re-render' icon='pi pi-sparkles' onClick={onProduce} />
+                            </div>
+                        )}
+                        {jobs.filter((job) => job.isRunning || job.error).length > 0 && (
+                            <div className='flex flex-col gap-2'>
+                                <div className='eyebrow'>generation</div>
+                                {jobs.filter((job) => job.isRunning || job.error).slice(0, 3).map((job) => (
+                                    <JobRow key={job.jobId.toString()} job={job} />
+                                ))}
                             </div>
                         )}
                         {meta && (
@@ -669,6 +709,7 @@ function SceneInspector({
                                 The show hasn't spoken yet — save & render to get this scene's recording and timing.
                             </p>
                         )}
+                </div>
                 </div>
             </div>
         </div>

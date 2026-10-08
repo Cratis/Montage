@@ -9,6 +9,7 @@ import { RegenerateShowStage } from '../../Api/Shows/Creation';
 import { All as AllJobs, JobActivity } from '../../Api/Shows/Production';
 import { ShowPlan } from '../plan';
 import { StoryboardEditor } from './Storyboard';
+import { JobRow } from './JobRow';
 
 export const stageFlow = [
     { status: 'Created', label: 'created', stage: undefined },
@@ -57,6 +58,7 @@ export function ShowDetail() {
     const videoRef = useRef<HTMLVideoElement>(null);
     const switchTab = (next: 'overview' | 'storyboard') => {
         if (next === tab) return;
+        if (confirmExit(next)) return;
         if (tab === 'overview') videoRef.current?.pause(); // a hidden player would keep sounding
         navigate(next === 'storyboard' ? `/shows/${id}/storyboard` : `/shows/${id}`);
     };
@@ -65,6 +67,26 @@ export function ShowDetail() {
     const saveRef = useRef<((produce: boolean) => void) | null>(null);
     const [busy, setBusy] = useState(false);
     const [saveError, setSaveError] = useState('');
+
+    // unsaved scene edits: leaving the storyboard asks whether to discard or generate
+    const [dirty, setDirty] = useState(false);
+    const dirtyRef = useRef(false);
+    const [pendingExit, setPendingExit] = useState<null | 'overview' | 'back' | 'storyboard'>(null);
+    const confirmExit = (dest: 'overview' | 'back' | 'storyboard') => {
+        if (!dirty || tab !== 'storyboard') return false;
+        setPendingExit(dest);
+        return true;
+    };
+    dirtyRef.current = dirty;
+    useEffect(() => {
+        const handler = (e: BeforeUnloadEvent) => {
+            if (!dirtyRef.current) return;
+            e.preventDefault();
+            e.returnValue = '';
+        };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, []);
 
     if (!show) {
         return (
@@ -87,7 +109,10 @@ export function ShowDetail() {
     return (
         <div className='min-h-screen max-w-6xl mx-auto px-8 py-10'>
             <div className='flex items-center gap-3 mb-2'>
-                <Link to='/' className='mono text-xs text-[var(--cr-motion-faint)] hover:text-[var(--cr-motion-ink)]'>← shows</Link>
+                <Link
+                    to='/'
+                    className='mono text-xs text-[var(--cr-motion-faint)] hover:text-[var(--cr-motion-ink)]'
+                    onClick={(e) => { if (confirmExit('back')) e.preventDefault(); }}>← shows</Link>
             </div>
             <header className='flex items-start justify-between gap-6 mb-6'>
                 <div className='min-w-0'>
@@ -201,7 +226,7 @@ export function ShowDetail() {
                             <a href={`/packages/${show.id}/package.zip`} download>
                                 <Button label='package.zip' icon='pi pi-download' severity='secondary' text />
                             </a>
-                            <Link to={`/preview/index.html?pkg=/packages/${show.id}/package/`} target='_blank'>
+                            <Link to={`/preview/index.html?pkg=/packages/${show.id}/package/&back=/shows/${show.id}`} target='_blank'>
                                 <Button label='Preview in engine' icon='pi pi-play' severity='secondary' text />
                             </Link>
                         </div>
@@ -215,11 +240,48 @@ export function ShowDetail() {
                 <StoryboardEditor
                     show={show}
                     registerSave={(fn) => { saveRef.current = fn; }}
+                    registerDirty={setDirty}
                     busy={busy}
                     setBusy={setBusy}
                     saveError={saveError}
                     setSaveError={setSaveError} />
             </div>
+
+            {pendingExit !== null && (
+                <div
+                    className='fixed inset-0 z-50 grid place-items-center bg-[rgba(6,7,10,0.72)] p-6'
+                    onClick={() => setPendingExit(null)}>
+                    <div className='panel panel-accent w-full max-w-md p-6' onClick={(e) => e.stopPropagation()}>
+                        <h2 className='display text-lg font-bold mb-2'>Changes not recorded</h2>
+                        <p className='text-sm text-[var(--cr-motion-dim)] mb-5'>
+                            Your scene changes aren't saved or spoken yet — leaving now discards them.
+                            Generate to record the voice, re-time the scenes and render.
+                        </p>
+                        <div className='flex justify-end gap-2'>
+                            <Button
+                                label='Discard changes'
+                                severity='secondary'
+                                outlined
+                                onClick={() => {
+                                    const dest = pendingExit;
+                                    setPendingExit(null);
+                                    setDirty(false);
+                                    if (dest === 'back') navigate('/');
+                                    else navigate(dest === 'overview' ? `/shows/${id}` : `/shows/${id}/storyboard`);
+                                }} />
+                            <Button
+                                label='Generate'
+                                icon='pi pi-sparkles'
+                                onClick={() => {
+                                    const produce = saveRef.current;
+                                    setPendingExit(null);
+                                    navigate(`/shows/${id}/storyboard`);
+                                    produce?.(true);
+                                }} />
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -297,34 +359,3 @@ function RetryButton({ showId, stage }: { showId: any; stage: string }) {
 }
 
 
-const jobStatusColor = (job: JobActivity) =>
-    job.error ? '#e5484d' : job.isRunning ? 'var(--cr-motion-amber)' : 'var(--cr-motion-violet)';
-
-/**
- * One durable job in the production pipeline: what it is, whether it is running, and why it
- * failed when it did. These are Orleans jobs - they survive a restart - so the view is history,
- * not just the live tick.
- */
-export function JobRow({ job }: { job: JobActivity }) {
-    const color = jobStatusColor(job);
-    const started = new Date(job.created);
-    return (
-        <div className='panel px-3.5 py-2.5 flex items-center gap-3'>
-            <span
-                className={`stage-dot flex-shrink-0 ${job.isRunning ? 'active pulsing' : job.error ? 'failed' : 'done'}`}
-                style={job.error && !job.isRunning ? { background: '#e5484d', boxShadow: 'none' } : undefined} />
-            <div className='min-w-0 flex-1'>
-                <div className='text-sm truncate'>{job.details}</div>
-                <div className='mono text-[11px] text-[var(--cr-motion-faint)]'>
-                    {job.type.replace(/^Motion\.Shows\.[a-z]+\./, '').replace(/Job$/, '')} · {started.toLocaleTimeString()}
-                    {job.error && <span className='text-[#e5484d]'> — {job.error}</span>}
-                </div>
-            </div>
-            <span
-                className='mono text-[11px] px-2 py-0.5 rounded-full border whitespace-nowrap'
-                style={{ color, borderColor: color, background: 'rgba(255,255,255,0.03)' }}>
-                {job.isRunning ? 'running' : job.error ? 'failed' : (job.status || '').toLowerCase()}
-            </span>
-        </div>
-    );
-}

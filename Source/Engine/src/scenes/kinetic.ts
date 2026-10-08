@@ -29,25 +29,49 @@ export class Kinetic extends Scene {
     const size = Math.round(Math.max(40, W * 0.031));
     ctx.font = font(size, theme.fontDisplay, 600);
     const lh = size * 1.5;
-    const blockH = show.length * lh;
+
+    // a lyric line can be a whole spoken sentence - wrap its words into rows that fit
+    // the viewport, or the text runs off both edges
+    const maxW = W * 0.86;
+    const spaceW = ctx.measureText(' ').width * 1.1;
+    type Row = { line: typeof lyrics.lines[number]; indices: number[]; width: number; widths: number[] };
+    const rows: Row[] = [];
+    for (const l of show) {
+      const widths = l.words.map((w) => ctx.measureText(w.w).width);
+      let current: number[] = [];
+      let currentW = 0;
+      l.words.forEach((w, wi) => {
+        const wordW = widths[wi]!;
+        const add = current.length ? spaceW + wordW : wordW;
+        if (current.length > 0 && currentW + add > maxW) {
+          rows.push({ line: l, indices: current, width: currentW, widths });
+          current = [];
+          currentW = 0;
+        }
+        currentW += current.length ? spaceW + wordW : wordW;
+        current.push(wi);
+      });
+      if (current.length) rows.push({ line: l, indices: current, width: currentW, widths });
+    }
+
+    const blockH = rows.length * lh;
     const y0 = H / 2 - blockH / 2 + lh * 0.75;
 
     // entrance: first line rises in over the first half second of the plate
     const enter = ease.outExpo(clamp(inv(0.05, 0.6, lt)));
 
-    show.forEach((l, li) => {
+    rows.forEach((row, ri) => {
+      const l = row.line;
       const words = l.words;
       if (words.length === 0) return;
-      const spaceW = ctx.measureText(' ').width * 1.1;
-      const widths = words.map((w) => ctx.measureText(w.w).width);
-      const lineW = widths.reduce((a, b) => a + b, 0) + spaceW * (words.length - 1);
-      let x = W / 2 - lineW / 2;
-      const y = y0 + li * lh;
+      let x = W / 2 - row.width / 2;
+      const y = y0 + ri * lh;
 
       const isCurrent = l.i === line.i;
       const lineAlpha = isCurrent ? 1 : 0.36;
 
-      words.forEach((w, wi) => {
+      for (const wi of row.indices) {
+        const w = words[wi]!;
         const prog = Lyrics.wordProgress(w, t);
         const active = prog > 0 && prog < 1;
         // pop on word onset, decaying through the word
@@ -66,7 +90,7 @@ export class Kinetic extends Scene {
         if (emph) { fill = theme.accent; alpha = Math.max(alpha, 0.95); }
 
         ctx.save();
-        const cx = x + widths[wi]! / 2, cy = y;
+        const cx = x + row.widths[wi]! / 2, cy = y;
         ctx.translate(cx, cy);
         ctx.scale(1 + pop, 1 + pop);
         ctx.globalAlpha = clamp(alpha) * enter;
@@ -79,7 +103,7 @@ export class Kinetic extends Scene {
           ctx.fillText(w.w, 0, 0);
           ctx.save();
           ctx.beginPath();
-          ctx.rect(-widths[wi]! / 2, -size, widths[wi]! * ease.linear(prog), size * 2);
+          ctx.rect(-row.widths[wi]! / 2, -size, row.widths[wi]! * ease.linear(prog), size * 2);
           ctx.clip();
           ctx.fillStyle = theme.ink;
           ctx.fillText(w.w, 0, 0);
@@ -88,8 +112,8 @@ export class Kinetic extends Scene {
           ctx.fillText(w.w, 0, 0);
         }
         ctx.restore();
-        x += widths[wi]! + spaceW;
-      });
+        x += row.widths[wi]! + spaceW;
+      }
     });
 
     // progress hairline under the current line
