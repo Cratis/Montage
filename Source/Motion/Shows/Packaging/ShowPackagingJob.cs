@@ -90,6 +90,8 @@ public class PackageShowStep(
         var services = scope.ServiceProvider;
         var packager = services.GetRequiredService<IShowPackager>();
         var artifactStore = services.GetRequiredService<ShowArtifactStore>();
+        var stills = services.GetRequiredService<Motion.Shows.Rendering.IEngineStills>();
+        var logger = services.GetRequiredService<ILogger<PackageShowStep>>();
 
         if (ShowArtifactStore.ReadTextOrNull(artifactStore.LyricsJson(showId)) is null)
         {
@@ -117,6 +119,18 @@ public class PackageShowStep(
         var packageDirectory = packager.WritePackageDirectory(showId, plan.Title, specJson, lyricsJson, audioAnalysisJson, voiceoverSource);
         var packageZip = artifactStore.PackageZip(showId);
         packager.Zip(packageDirectory, packageZip);
+
+        // storyboard thumbnails: one still per scene at its midpoint (best effort - a failed
+        // capture leaves the editor on placeholders, it never fails the show)
+        try
+        {
+            var times = windows.Select(w => Math.Round((w.Start + w.End) / 2, 2)).ToList();
+            await stills.CapturePerScene(packageDirectory, times, artifactStore.SnapshotsFolderFor(showId), cancellationToken);
+        }
+        catch (Exception snapshotEx)
+        {
+            logger.LogWarning(snapshotEx, "Scene stills failed for {ShowId} - the storyboard falls back to placeholders", showId.Value);
+        }
 
         await JobStepAppender.Append(this, chronicleClient, showId.Value, new ShowPackaged(packageDirectory, packageZip));
         return JobStepResult.Succeeded();

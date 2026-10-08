@@ -154,9 +154,8 @@ public class SynthesizeVoiceoverStep(
         }
         var plan = ShowPlanner.Deserialize(planJson) ?? throw new ShowPlanningFailed("The stored plan could not be read.");
 
-        var takesFolder = Path.Combine(artifactStore.FolderFor(showId), "takes");
-        if (Directory.Exists(takesFolder)) Directory.Delete(takesFolder, true);
-        Directory.CreateDirectory(takesFolder);
+        var takesFolder = artifactStore.VoiceoverFolderFor(showId);
+        foreach (var stale in Directory.EnumerateFiles(takesFolder, "scene-*.wav")) File.Delete(stale);
 
         // synthesize one take per scene (scenes with no spoken text contribute only a gap)
         var takePaths = new List<string>();
@@ -170,19 +169,44 @@ public class SynthesizeVoiceoverStep(
         }
         if (takePaths.Count == 0) throw new SpeechSynthesisFailed("The plan has no spoken narration at all.");
 
-        // assemble: 0.45s of air between scenes
+        // assemble: 0.45s of air between scenes, recording each scene's exact offset
         var finalWav = artifactStore.VoiceoverWav(showId);
         (int Channels, int SampleRate)? format = null;
+        var sceneDocs = new List<object>();
+        var takeIndex = 0;
+        double offset = 0;
         await using (var target = WavWriter.Create(finalWav))
         {
-            for (var i = 0; i < takePaths.Count; i++)
+            for (var i = 0; i < plan.Scenes.Count; i++)
             {
-                if (i > 0) WavWriter.AppendSilence(target, format!.Value, SceneGapSeconds);
-                WavWriter.Append(takePaths[i], target, ref format);
+                var spoken = plan.Scenes[i].Spoken.Trim();
+                if (spoken.Length == 0) continue;
+                var take = takePaths[takeIndex];
+                if (takeIndex > 0) WavWriter.AppendSilence(target, format!.Value, SceneGapSeconds);
+                offset += takeIndex > 0 ? SceneGapSeconds : 0;
+                var takeDuration = Wav.ReadDuration(take);
+                sceneDocs.Add(new
+                {
+                    index = i + 1,
+                    sceneId = $"scene-{i + 1}",
+                    file = $"voiceover/scene-{i + 1:00}.wav",
+                    duration = Math.Round(takeDuration, 3),
+                    offset = Math.Round(offset, 3),
+                    spoken,
+                });
+                WavWriter.Append(take, target, ref format);
+                offset += takeDuration;
+                takeIndex++;
             }
             WavWriter.Finalize(target, format!.Value);
         }
         var duration = Wav.ReadDuration(finalWav);
+
+        // the per-scene manifest the storyboard and the per-scene player consume
+        ShowArtifactStore.WriteText(
+            artifactStore.ScenesJson(showId),
+            System.Text.Json.JsonSerializer.Serialize(new { scenes = sceneDocs, duration = Math.Round(duration, 3) },
+                new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower, WriteIndented = true }));
 
         // mp3 for playback and packaging; wav when ffmpeg is missing (engine and renderer handle both)
         var mp3 = artifactStore.VoiceoverAudio(showId);

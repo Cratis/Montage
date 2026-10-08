@@ -24,8 +24,9 @@ public record StoryboardSceneInput(string Type, string Spoken, IReadOnlyDictiona
 /// <param name="Title">The show's title.</param>
 /// <param name="Voice">The TTS voice to speak with.</param>
 /// <param name="Scenes">The scenes, in story order.</param>
+/// <param name="StartProduction">True re-runs production after saving; a plain save only persists.</param>
 [Command]
-public record SaveStoryboard(ShowId ShowId, string Title, string Voice, IReadOnlyList<StoryboardSceneInput> Scenes)
+public record SaveStoryboard(ShowId ShowId, string Title, string Voice, IReadOnlyList<StoryboardSceneInput> Scenes, bool StartProduction = true)
 {
     /// <summary>
     /// Handles the command: normalizes the storyboard into a <see cref="ShowPlan"/>, writes it as
@@ -67,6 +68,7 @@ public record SaveStoryboard(ShowId ShowId, string Title, string Voice, IReadOnl
 
         return (ShowId, new ShowStoryboardSaved(
             string.IsNullOrWhiteSpace(Voice) ? "af_heart" : Voice.Trim(),
-            planJson));
+            planJson,
+            StartProduction));
     }
 }

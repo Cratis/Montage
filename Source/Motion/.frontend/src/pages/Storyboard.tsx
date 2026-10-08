@@ -1,7 +1,8 @@
 // Copyright (c) Cratis. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@cratis/components/Common';
 import { Show, ObserveAll } from '../../Api/Shows/Listing';
@@ -13,6 +14,16 @@ interface Scene {
     type: string;
     spoken: string;
     params: Record<string, unknown>;
+}
+
+/** What the pipeline recorded for one scene (voiceover/voiceover/scenes.json). */
+interface SceneMeta {
+    index: number;
+    scene_id: string;
+    file: string;
+    duration: number;
+    offset: number;
+    spoken: string;
 }
 
 /** The engine's scene types - what each one renders. */
@@ -30,12 +41,58 @@ const TYPES: { value: string; label: string; hint: string }[] = [
     { value: 'endcard', label: 'Endcard', hint: 'closing card with CTA' },
 ];
 
-const VOICES = [
-    'af_heart', 'af_bella', 'af_nicole', 'af_aoede', 'af_kore', 'af_sarah', 'af_sky', 'af_alloy', 'af_jessica', 'af_nova', 'af_river',
-    'am_adam', 'am_echo', 'am_eric', 'am_fenrir', 'am_liam', 'am_michael', 'am_onyx', 'am_puck',
-    'bf_emma', 'bf_isabella', 'bf_alice', 'bf_lily',
-    'bm_george', 'bm_fable', 'bm_lewis', 'bm_daniel',
-];
+/** Motion presets a scene type understands (params.motion - also describable in the inspector). */
+const MOTION_PRESETS: Record<string, { value: string; label: string }[]> = {
+    chart: [{ value: 'grow', label: 'Grow from baseline' }, { value: 'pop', label: 'Pop with overshoot' }, { value: 'fade', label: 'Fade in' }],
+    flow: [{ value: 'pop', label: 'Pop in sequence' }, { value: 'slide', label: 'Slide in' }, { value: 'fade', label: 'Fade in' }],
+    metric: [{ value: 'count', label: 'Count up' }, { value: 'fade', label: 'Fade in' }],
+    steps: [{ value: 'slide', label: 'Slide in' }, { value: 'fade', label: 'Fade in' }, { value: 'pop', label: 'Pop in' }],
+    compare: [{ value: 'slide', label: 'Slide in' }, { value: 'fade', label: 'Fade in' }],
+};
+
+/** The voice dropdown: what the text-to-speech service actually offers, with an audition button. */
+function VoicePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+    const [voices, setVoices] = useState<string[]>([]);
+    const [previewing, setPreviewing] = useState(false);
+
+    useEffect(() => {
+        let cancelled = false;
+        fetch('/api/motion/voices')
+            .then((r) => r.json())
+            .then((d) => { if (!cancelled) setVoices(d.voices ?? []); })
+            .catch(() => { /* dropdown falls back to the current value */ });
+        return () => { cancelled = true; };
+    }, []);
+
+    const preview = async () => {
+        setPreviewing(true);
+        try {
+            const audio = new Audio(`/api/motion/voices/preview?voice=${encodeURIComponent(value)}`);
+            audio.onended = () => setPreviewing(false);
+            audio.onerror = () => setPreviewing(false);
+            await audio.play();
+        } catch { setPreviewing(false); }
+    };
+
+    return (
+        <div className='flex gap-2'>
+            <select
+                className='flex-1 panel px-3 py-2 text-sm outline-none focus:border-[var(--cr-motion-violet)] bg-transparent mono'
+                value={value}
+                onChange={(e) => onChange(e.target.value)}>
+                {!voices.includes(value) && <option value={value}>{value || 'pick a voice'}</option>}
+                {voices.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+            <button
+                className='panel px-3 grid place-items-center hover:border-[var(--cr-motion-violet)] text-[var(--cr-motion-dim)] hover:text-[var(--cr-motion-ink)]'
+                title='Hear this voice say a line'
+                disabled={previewing || !value}
+                onClick={preview}>
+                {previewing ? '…' : '▶'}
+            </button>
+        </div>
+    );
+}
 
 /** Sensible starting params when a scene switches type. */
 const DEFAULT_PARAMS: Record<string, Record<string, unknown>> = {
@@ -59,6 +116,7 @@ const csv = (v: unknown) => asList(v).map((x) => String(x)).join(', ');
 const fromCsv = (v: string) => v.split(',').map((s) => s.trim()).filter(Boolean);
 const fromCsvNumbers = (v: string) => v.split(',').map((s) => Number(s.trim())).filter((n) => !Number.isNaN(n));
 const wordsIn = (text: string) => text.split(/\s+/).filter(Boolean).length;
+const pad2 = (n: number) => String(n).padStart(2, '0');
 
 /** Small labeled text input. */
 function Field({ label, value, onChange, placeholder, mono }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean }) {
@@ -86,9 +144,10 @@ function ListField({ label, value, onChange, placeholder }: { label: string; val
 }
 
 /**
- * The visual storyboard: one card per scene - what it looks like (type + parameters), what is
- * spoken over it, the voice it is spoken with. Saving writes the plan and re-runs production
- * from the voiceover onward - plan, voice, timing, package and render all follow.
+ * The storyboard: the show laid out as its scenes, each with the engine's own mid-scene still
+ * as its preview. Drag scenes to reorder (tilted and ghosted while dragging, with drop lines),
+ * click one to open it - play the scene with its voice in the engine, edit its content, narration,
+ * motion and timing in tabs. Save persists; save & render re-runs production.
  */
 export function Storyboard() {
     const { id } = useParams();
@@ -104,6 +163,19 @@ export function Storyboard() {
     const [command, setValues] = SaveStoryboard.use();
     const [busy, setBusy] = useState(false);
     const [saveError, setSaveError] = useState<string>('');
+    const [inspecting, setInspecting] = useState<number | null>(null);
+
+    // production artifacts: per-scene voice metadata + the engine's mid-scene stills
+    const [sceneMeta, setSceneMeta] = useState<Record<number, SceneMeta>>({});
+    const [snapshots, setSnapshots] = useState<Record<number, string>>({});
+
+    // drag & drop
+    const [dragIndex, setDragIndex] = useState<number | null>(null);
+    const [dropIndex, setDropIndex] = useState<number | null>(null);
+    const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
+    const dragState = useRef<{ startX: number; startY: number; moved: boolean; rect: DOMRect } | null>(null);
+    // the floating copy of the dragged row - follows the pointer at 60% scale, slightly tilted
+    const [ghost, setGhost] = useState<{ index: number; x: number; y: number; width: number; height: number; grabX: number; grabY: number } | null>(null);
 
     // seed the editor once the show's plan is in view
     useEffect(() => {
@@ -113,6 +185,35 @@ export function Storyboard() {
         setVoice(show.voice || 'af_heart');
         setScenes((plan?.scenes ?? []).map((s) => ({ type: s.type, spoken: s.spoken ?? '', params: { ...(s.params ?? {}) } })));
     }, [show, plan, loadedFor]);
+
+    // production artifacts exist after the pipeline has spoken and packaged - refresh on status change
+    useEffect(() => {
+        if (!show || !id) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch(`/packages/${id}/voiceover/scenes.json`);
+                if (res.ok && !cancelled) {
+                    const doc = await res.json();
+                    const meta: Record<number, SceneMeta> = {};
+                    for (const s of doc.scenes ?? []) meta[s.index] = s;
+                    setSceneMeta(meta);
+                } else if (!cancelled) setSceneMeta({});
+            } catch { if (!cancelled) setSceneMeta({}); }
+
+            // probe one still per scene; missing files just leave placeholders
+            const found: Record<number, string> = {};
+            await Promise.all(scenes.map(async (_, i) => {
+                const url = `/packages/${id}/snapshot/scene-${pad2(i + 1)}.png`;
+                try {
+                    const probe = await fetch(url, { method: 'HEAD' });
+                    if (probe.ok && !cancelled) found[i] = url;
+                } catch { /* placeholder stays */ }
+            }));
+            if (!cancelled) setSnapshots(found);
+        })();
+        return () => { cancelled = true; };
+    }, [show?.status, id, scenes.length]);
 
     if (!show) {
         return (
@@ -125,14 +226,6 @@ export function Storyboard() {
 
     const setParam = (index: number, key: string, value: unknown) =>
         setScenes(scenes.map((s, i) => (i === index ? { ...s, params: { ...s.params, [key]: value } } : s)));
-
-    const move = (index: number, delta: number) => {
-        const next = [...scenes];
-        const target = index + delta;
-        if (target < 0 || target >= next.length) return;
-        [next[index], next[target]] = [next[target], next[index]];
-        setScenes(next);
-    };
 
     const addScene = (after: number) => {
         const next = [...scenes];
@@ -151,46 +244,122 @@ export function Storyboard() {
     const changeType = (index: number, type: string) =>
         setScenes(scenes.map((s, i) => (i === index ? { type, spoken: s.spoken, params: { ...(DEFAULT_PARAMS[type] ?? {}) } } : s)));
 
+    // ---- drag & drop -----------------------------------------------------------------------
+    const beginDrag = (e: React.PointerEvent<HTMLDivElement>, index: number) => {
+        if (e.button !== 0) return;
+        dragState.current = { startX: e.clientX, startY: e.clientY, moved: false, rect: e.currentTarget.getBoundingClientRect() };
+        e.currentTarget.setPointerCapture(e.pointerId);
+    };
+
+    const moveDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+        const st = dragState.current;
+        if (!st) return;
+        if (!st.moved && Math.hypot(e.clientX - st.startX, e.clientY - st.startY) < 8) return;
+        if (!st.moved) {
+            st.moved = true;
+            setGhost({ index: dragIndex ?? 0, x: e.clientX, y: e.clientY, width: st.rect.width, height: st.rect.height, grabX: e.clientX - st.rect.left, grabY: e.clientY - st.rect.top });
+        }
+        setGhost((g) => (g ? { ...g, x: e.clientX, y: e.clientY, index: dragIndex ?? g.index } : g));
+        setDragIndex((current) => current ?? 0);
+        setDragIndex((current) => {
+            const from = current ?? 0;
+            // which gap is the pointer over? compare against card midpoints (dragged card excluded)
+            let target = scenes.length - 1;
+            for (let i = 0; i < cardRefs.current.length; i++) {
+                if (i === from) continue;
+                const el = cardRefs.current[i];
+                if (!el) continue;
+                const rect = el.getBoundingClientRect();
+                if (e.clientY < rect.top + rect.height / 2) { target = i > from ? i - 1 : i; break; }
+                target = i > from ? i : scenes.length - 1;
+            }
+            setDropIndex(target);
+            return from;
+        });
+    };
+
+    const endDrag = (e: React.PointerEvent<HTMLDivElement>, index: number) => {
+        const st = dragState.current;
+        dragState.current = null;
+        if (!st) return;
+        if (!st.moved) {
+            // a click, not a drag: open the scene inspector
+            setInspecting(index);
+            setDragIndex(null);
+            setDropIndex(null);
+            return;
+        }
+        const from = dragIndex ?? index;
+        const to = dropIndex ?? from;
+        if (from !== to) {
+            const next = [...scenes];
+            const [moved] = next.splice(from, 1);
+            next.splice(to, 0, moved);
+            setScenes(next);
+        }
+        setDragIndex(null);
+        setDropIndex(null);
+        setGhost(null);
+    };
+
     const totalWords = scenes.reduce((sum, s) => sum + wordsIn(s.spoken), 0);
 
-    const save = async () => {
+    const save = async (produce: boolean) => {
         setBusy(true);
         setSaveError('');
         try {
             // params travel as plain JSON - the backend binds them into JsonElement parameters
             setValues({
-                showId: id as never,
+                showId: id,
                 title,
                 voice,
                 scenes: scenes.map((s) => ({ type: s.type, spoken: s.spoken, params: s.params })) as never,
-            });
+                startProduction: produce,
+            } as never);
             const result = await command.execute();
             if (result.isSuccess) {
-                navigate(`/shows/${id}`);
+                if (!produce) navigate(`/shows/${id}`);
             } else {
                 const problems = [...result.validationResults.map((v) => v.message), ...result.exceptionMessages].filter(Boolean);
                 setSaveError(problems.length > 0 ? problems.join('; ') : 'The storyboard could not be saved.');
             }
+        } catch (error) {
+            setSaveError(String((error as Error)?.message ?? error));
         } finally {
             setBusy(false);
         }
     };
 
+    const DropLine = ({ gap }: { gap: number }) => (
+        <div
+            className='relative h-0'
+            style={{ marginTop: gap ? -2 : 0 }}>
+            {dropIndex === gap && (
+                <div className='absolute left-0 right-0 h-[3px] rounded-full bg-[var(--cr-motion-violet)] shadow-[0_0_12px_var(--cr-motion-violet)]'>
+                    <div className='absolute -left-1 -top-[3px] w-2 h-2 rounded-full bg-[var(--cr-motion-violet)]' />
+                </div>
+            )}
+        </div>
+    );
+
     return (
-        <div className='min-h-screen max-w-4xl mx-auto px-8 py-10'>
+        <div className='min-h-screen max-w-5xl mx-auto px-8 py-10'>
             <div className='flex items-center gap-3 mb-2'>
                 <Link to={`/shows/${id}`} className='mono text-xs text-[var(--cr-motion-faint)] hover:text-[var(--cr-motion-ink)]'>← show</Link>
             </div>
-            <header className='flex items-end justify-between gap-6 mb-8'>
+            <header className='flex items-end justify-between gap-6 mb-6'>
                 <div>
                     <div className='eyebrow mb-2'>storyboard</div>
-                    <h1 className='display text-3xl font-bold'>Scene by scene</h1>
+                    <h1 className='display text-3xl font-bold'>{title || 'Scene by scene'}</h1>
                     <p className='text-sm text-[var(--cr-motion-dim)] mt-2 max-w-prose'>
-                        Every card is a scene: how it looks, what is spoken over it. Saving re-runs
-                        production — voice, timing, package and render follow the new storyboard.
+                        Drag scenes to reorder. Click a scene to play it with its voice, and to edit
+                        its content, narration, motion and timing.
                     </p>
                 </div>
-                <Button label='Save & produce' icon='pi pi-sparkles' loading={busy} onClick={save} />
+                <div className='flex gap-2 flex-shrink-0'>
+                    <Button label='Save' icon='pi pi-save' severity='secondary' outlined loading={busy} onClick={() => save(false)} />
+                    <Button label='Save & render' icon='pi pi-sparkles' loading={busy} onClick={() => save(true)} />
+                </div>
             </header>
 
             {saveError && (
@@ -203,109 +372,321 @@ export function Storyboard() {
                 <Field label='Title' value={title} onChange={setTitle} />
                 <label className='block'>
                     <span className='eyebrow block mb-1.5'>Voice</span>
-                    <input
-                        className='w-full panel px-3 py-2 text-sm outline-none focus:border-[var(--cr-motion-violet)] bg-transparent mono'
-                        list='voice-options'
-                        value={voice}
-                        onChange={(e) => setVoice(e.target.value)} />
-                    <datalist id='voice-options'>
-                        {VOICES.map((v) => <option key={v} value={v} />)}
-                    </datalist>
+                    <VoicePicker value={voice} onChange={setVoice} />
                 </label>
-                <div className='text-xs text-[var(--cr-motion-faint)] self-end pb-2'>
+                <div className='text-xs text-[var(--cr-motion-faint)] self-end pb-2 mono'>
                     {scenes.length} scenes · ~{Math.round(totalWords / 2.7)}s spoken · {totalWords} words
                 </div>
             </section>
 
-            <div className='flex flex-col gap-4'>
-                {scenes.map((scene, index) => (
-                    <SceneCard
-                        key={`${index}-${scene.type}`}
-                        scene={scene}
-                        index={index}
-                        total={scenes.length}
-                        onChange={(patch) => update(index, patch)}
-                        onParam={(key, value) => setParam(index, key, value)}
-                        onType={(type) => changeType(index, type)}
-                        onMove={(delta) => move(index, delta)}
-                        onDuplicate={() => duplicate(index)}
-                        onRemove={() => remove(index)}
-                        onAddAfter={() => addScene(index)} />
-                ))}
+            <div className='flex flex-col'>
+                {scenes.map((scene, index) => {
+                    const meta = sceneMeta[index + 1];
+                    const dragging = dragIndex === index;
+                    const meta2 = TYPES.find((t) => t.value === scene.type);
+                    return (
+                        <div key={`${index}-${scene.type}`} ref={(el) => { cardRefs.current[index] = el; }}>
+                            <DropLine gap={index} />
+                            <div
+                                className={`panel p-4 mb-3 flex gap-4 select-none transition-opacity duration-150 ${dragging ? 'opacity-25 border-dashed cursor-grabbing' : 'cursor-grab hover:border-[rgba(255,255,255,0.18)]'}`}
+                                onPointerDown={(e) => beginDrag(e, index)}
+                                onPointerMove={moveDrag}
+                                onPointerUp={(e) => endDrag(e, index)}
+                                onPointerCancel={() => { dragState.current = null; setDragIndex(null); setDropIndex(null); setGhost(null); }}>
+                                <div className='w-40 aspect-video rounded-md overflow-hidden bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] flex-shrink-0 grid place-items-center relative'>
+                                    {snapshots[index] ? (
+                                        <img src={snapshots[index]} alt={`scene ${index + 1}`} className='w-full h-full object-cover' draggable={false} />
+                                    ) : (
+                                        <>
+                                            <span className='mono text-[10px] uppercase tracking-widest text-[var(--cr-motion-faint)]'>{scene.type}</span>
+                                            {meta && <span className='absolute bottom-1 right-1.5 mono text-[10px] text-[var(--cr-motion-faint)]'>no still yet</span>}
+                                        </>
+                                    )}
+                                    <span className='absolute top-1 left-1.5 mono text-[10px] text-[rgba(255,255,255,0.75)] bg-[rgba(11,13,18,0.7)] rounded px-1'>
+                                        {pad2(index + 1)}
+                                    </span>
+                                </div>
+                                <div className='min-w-0 flex-1'>
+                                    <div className='flex items-center gap-2'>
+                                        <span className='text-sm font-medium'>{meta2?.label ?? scene.type}</span>
+                                        {meta && <span className='mono text-[11px] text-[var(--cr-motion-faint)]'>{meta.offset.toFixed(1)}s → {(meta.offset + meta.duration).toFixed(1)}s</span>}
+                                        <span className='mono text-[11px] text-[var(--cr-motion-faint)] ml-auto'>~{Math.max(1, Math.round(wordsIn(scene.spoken) / 2.7))}s</span>
+                                    </div>
+                                    <p className='text-sm text-[var(--cr-motion-dim)] line-clamp-2 mt-1'>
+                                        {scene.spoken || <span className='italic'>no narration</span>}
+                                    </p>
+                                    <div className='flex gap-1 mt-2 text-[var(--cr-motion-faint)]'>
+                                        <button
+                                            className='w-7 h-7 grid place-items-center hover:text-[var(--cr-motion-ink)] disabled:opacity-30'
+                                            title='Move up'
+                                            disabled={index === 0}
+                                            onClick={() => {
+                                                const next = [...scenes];
+                                                [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                                                setScenes(next);
+                                            }}>↑</button>
+                                        <button
+                                            className='w-7 h-7 grid place-items-center hover:text-[var(--cr-motion-ink)] disabled:opacity-30'
+                                            title='Move down'
+                                            disabled={index === scenes.length - 1}
+                                            onClick={() => {
+                                                const next = [...scenes];
+                                                [next[index + 1], next[index]] = [next[index], next[index + 1]];
+                                                setScenes(next);
+                                            }}>↓</button>
+                                        <button className='w-7 h-7 grid place-items-center hover:text-[var(--cr-motion-ink)]' title='Duplicate' onClick={() => duplicate(index)}>⧉</button>
+                                        <button className='w-7 h-7 grid place-items-center hover:text-[#e5484d]' title='Remove' onClick={() => remove(index)}>✕</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+                <DropLine gap={scenes.length} />
             </div>
 
-            <div className='flex items-center justify-between mt-6'>
+            <div className='flex items-center justify-between mt-4'>
                 <Button label='Add scene' icon='pi pi-plus' text onClick={() => addScene(scenes.length - 1)} />
-                <Button label='Save & produce' icon='pi pi-sparkles' loading={busy} onClick={save} />
+                <div className='flex gap-2'>
+                    <Button label='Save' icon='pi pi-save' severity='secondary' outlined loading={busy} onClick={() => save(false)} />
+                    <Button label='Save & render' icon='pi pi-sparkles' loading={busy} onClick={() => save(true)} />
+                </div>
+            </div>
+
+            {ghost && scenes[ghost.index] && createPortal(
+                <div
+                    className='panel panel-accent p-4 flex gap-4 pointer-events-none'
+                    style={{
+                        position: 'fixed',
+                        left: ghost.x - ghost.grabX * 0.6,
+                        top: ghost.y - ghost.grabY * 0.6,
+                        width: ghost.width,
+                        transform: 'scale(0.6) rotate(-2.5deg)',
+                        transformOrigin: 'top left',
+                        zIndex: 80,
+                        boxShadow: '0 24px 70px rgba(0,0,0,0.55)',
+                        background: 'var(--cr-motion-bg, #10131b)',
+                    }}>
+                    <div className='w-40 aspect-video rounded-md overflow-hidden bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] flex-shrink-0 grid place-items-center relative'>
+                        {snapshots[ghost.index]
+                            ? <img src={snapshots[ghost.index]} alt='' className='w-full h-full object-cover' draggable={false} />
+                            : <span className='mono text-[10px] uppercase tracking-widest text-[var(--cr-motion-faint)]'>{scenes[ghost.index].type}</span>}
+                    </div>
+                    <div className='min-w-0 flex-1'>
+                        <div className='flex items-center gap-2'>
+                            <span className='text-sm font-medium'>{TYPES.find((t) => t.value === scenes[ghost.index].type)?.label}</span>
+                            <span className='mono text-[11px] text-[var(--cr-motion-faint)] ml-auto'>~{Math.max(1, Math.round(wordsIn(scenes[ghost.index].spoken) / 2.7))}s</span>
+                        </div>
+                        <p className='text-sm text-[var(--cr-motion-dim)] line-clamp-2 mt-1'>{scenes[ghost.index].spoken || <span className='italic'>no narration</span>}</p>
+                    </div>
+                </div>,
+                document.body)}
+
+            {inspecting !== null && scenes[inspecting] && (
+                <SceneInspector
+                    show={show}
+                    index={inspecting}
+                    scene={scenes[inspecting]}
+                    meta={sceneMeta[inspecting + 1]}
+                    onChange={(patch) => update(inspecting, patch)}
+                    onParam={(key, value) => setParam(inspecting, key, value)}
+                    onClose={() => setInspecting(null)} />
+            )}
+        </div>
+    );
+}
+
+/** Tabs for the scene inspector. */
+const TABS = [
+    { id: 'preview', label: 'Preview' },
+    { id: 'content', label: 'Content' },
+    { id: 'narration', label: 'Narration' },
+    { id: 'motion', label: 'Motion' },
+    { id: 'timing', label: 'Timing' },
+] as const;
+
+/**
+ * The scene inspector: the engine playing the scene with its voice, and every property the
+ * scene has - content parameters, narration, motion preset and description, recorded timing.
+ */
+function SceneInspector({
+    show, index, scene, meta, onChange, onParam, onClose,
+}: {
+    show: Show;
+    index: number;
+    scene: Scene;
+    meta?: SceneMeta;
+    onChange: (patch: Partial<Scene>) => void;
+    onParam: (key: string, value: unknown) => void;
+    onClose: () => void;
+}) {
+    const [tab, setTab] = useState<(typeof TABS)[number]['id']>('preview');
+    const motionRaw = scene.params.motion as { preset?: string; duration?: number; describe?: string } | undefined;
+    const presets = MOTION_PRESETS[scene.type] ?? [];
+    const showId = show.id.toString();
+    const sceneNumber = index + 1;
+
+    return (
+        <div className='fixed inset-0 z-40 grid place-items-center bg-[rgba(6,7,10,0.72)] p-6' onClick={onClose}>
+            <div
+                className='panel panel-accent w-full max-w-4xl max-h-[92vh] overflow-y-auto p-6'
+                onClick={(e) => e.stopPropagation()}>
+                <div className='flex items-center gap-3 mb-4'>
+                    <span className='mono text-xs text-[var(--cr-motion-faint)]'>{pad2(sceneNumber)}</span>
+                    <h2 className='display text-xl font-bold'>{TYPES.find((t) => t.value === scene.type)?.label ?? scene.type}</h2>
+                    <span className='mono text-[11px] text-[var(--cr-motion-faint)]'>{meta ? `${meta.offset.toFixed(1)}s · ${meta.duration.toFixed(1)}s` : 'not spoken yet'}</span>
+                    <button className='ml-auto w-8 h-8 grid place-items-center hover:text-[var(--cr-motion-ink)] text-[var(--cr-motion-faint)]' onClick={onClose}>✕</button>
+                </div>
+
+                <div className='flex gap-1 mb-5 border-b border-[rgba(255,255,255,0.08)] pb-2'>
+                    {TABS.map((t) => (
+                        <button
+                            key={t.id}
+                            className={`px-3 py-1.5 rounded-md text-sm transition-colors ${tab === t.id ? 'bg-[rgba(140,124,246,0.14)] text-[var(--cr-motion-violet)]' : 'text-[var(--cr-motion-dim)] hover:text-[var(--cr-motion-ink)]'}`}
+                            onClick={() => setTab(t.id)}>
+                            {t.label}
+                        </button>
+                    ))}
+                </div>
+
+                {tab === 'preview' && (
+                    <div className='flex flex-col gap-3'>
+                        <iframe
+                            key={`${showId}-${sceneNumber}`}
+                            title={`scene ${sceneNumber} preview`}
+                            className='w-full aspect-video rounded-lg border border-[rgba(255,255,255,0.1)] bg-black'
+                            src={`/preview/index.html?pkg=/packages/${showId}/package&scene=scene-${sceneNumber}`}
+                            allow='autoplay' />
+                        <p className='text-xs text-[var(--cr-motion-faint)]'>
+                            The engine in the browser, playing this scene with its voiceover — the same
+                            scene the renderer captures. Space plays/pauses; the HUD scrubs.
+                        </p>
+                    </div>
+                )}
+
+                {tab === 'content' && (
+                    <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
+                        <ParamsEditor scene={{ type: scene.type, params: scene.params }} onParam={onParam} />
+                    </div>
+                )}
+
+                {tab === 'narration' && (
+                    <div className='flex flex-col gap-3'>
+                        <label className='block'>
+                            <span className='eyebrow block mb-1.5'>What the voice says</span>
+                            <textarea
+                                className='w-full panel px-3 py-2 text-sm outline-none focus:border-[var(--cr-motion-violet)] bg-transparent resize-y min-h-[6rem]'
+                                rows={3}
+                                value={scene.spoken}
+                                onChange={(e) => onChange({ spoken: e.target.value })} />
+                        </label>
+                        {meta && (
+                            <div className='panel p-4 flex items-center gap-4'>
+                                <button
+                                    className='w-10 h-10 rounded-full border border-[rgba(255,255,255,0.16)] grid place-items-center hover:border-[var(--cr-motion-violet)]'
+                                    title='Audition this scene’s recording'
+                                    onClick={() => {
+                                        const audio = new Audio(`/packages/${showId}/${meta.file}`);
+                                        void audio.play();
+                                    }}>▶</button>
+                                <div className='mono text-xs text-[var(--cr-motion-faint)]'>
+                                    take {pad2(sceneNumber)}.wav · {meta.duration.toFixed(2)}s · {wordsIn(meta.spoken)} words
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {tab === 'motion' && (
+                    <div className='flex flex-col gap-4'>
+                        {presets.length > 0 ? (
+                            <>
+                                <label className='block'>
+                                    <span className='eyebrow block mb-1.5'>Preset</span>
+                                    <div className='flex gap-2 flex-wrap'>
+                                        <button
+                                            className={`px-3 py-1.5 rounded-md text-sm mono border ${!motionRaw?.preset ? 'border-[var(--cr-motion-violet)] text-[var(--cr-motion-violet)]' : 'border-[rgba(255,255,255,0.12)] text-[var(--cr-motion-dim)]'}`}
+                                            onClick={() => onParam('motion', { ...(motionRaw ?? {}), preset: undefined })}>
+                                            default
+                                        </button>
+                                        {presets.map((p) => (
+                                            <button
+                                                key={p.value}
+                                                className={`px-3 py-1.5 rounded-md text-sm mono border ${motionRaw?.preset === p.value ? 'border-[var(--cr-motion-violet)] text-[var(--cr-motion-violet)]' : 'border-[rgba(255,255,255,0.12)] text-[var(--cr-motion-dim)]'}`}
+                                                onClick={() => onParam('motion', { ...(motionRaw ?? {}), preset: p.value })}>
+                                                {p.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </label>
+                                <label className='block max-w-[12rem]'>
+                                    <span className='eyebrow block mb-1.5'>Build time (seconds)</span>
+                                    <input
+                                        className='w-full panel px-3 py-2 text-sm outline-none focus:border-[var(--cr-motion-violet)] bg-transparent mono'
+                                        type='number'
+                                        min={0.2}
+                                        step={0.1}
+                                        value={motionRaw?.duration ?? ''}
+                                        placeholder='scene default'
+                                        onChange={(e) => onParam('motion', {
+                                            ...(motionRaw ?? {}),
+                                            duration: e.target.value === '' ? undefined : Number(e.target.value),
+                                        })} />
+                                </label>
+                                <label className='block'>
+                                    <span className='eyebrow block mb-1.5'>Describe the motion (for the planner)</span>
+                                    <textarea
+                                        className='w-full panel px-3 py-2 text-sm outline-none focus:border-[var(--cr-motion-violet)] bg-transparent resize-y'
+                                        rows={2}
+                                        placeholder='e.g. bars rise as each word lands; the max bar pulses on the punchline'
+                                        value={asString(motionRaw?.describe)}
+                                        onChange={(e) => onParam('motion', { ...(motionRaw ?? {}), describe: e.target.value })} />
+                                </label>
+                            </>
+                        ) : (
+                            <p className='text-sm text-[var(--cr-motion-dim)]'>
+                                This scene type has no infographic motion presets — it animates its text by itself.
+                            </p>
+                        )}
+                    </div>
+                )}
+
+                {tab === 'timing' && (
+                    <div className='flex flex-col gap-2 text-sm'>
+                        {meta ? (
+                            <>
+                                <Row label='Starts at' value={`${meta.offset.toFixed(2)}s into the show`} />
+                                <Row label='Spoken for' value={`${meta.duration.toFixed(2)}s`} />
+                                <Row label='Words' value={`${wordsIn(meta.spoken)} (${(wordsIn(meta.spoken) / Math.max(0.1, meta.duration)).toFixed(1)}/s)`} />
+                                <Row label='Take' value={meta.file} />
+                                <p className='text-xs text-[var(--cr-motion-faint)] mt-2'>
+                                    Word-level time codes come from transcribing this scene's own recording,
+                                    so karaoke text and per-word motion land exactly on the voice.
+                                </p>
+                            </>
+                        ) : (
+                            <p className='text-[var(--cr-motion-dim)]'>
+                                The show hasn't spoken yet — save & render to get this scene's recording and timing.
+                            </p>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );
 }
 
-/** One scene card: type, narration, and the visual parameters that type renders. */
-function SceneCard({
-    scene, index, total, onChange, onParam, onType, onMove, onDuplicate, onRemove, onAddAfter,
-}: {
-    scene: Scene;
-    index: number;
-    total: number;
-    onChange: (patch: Partial<Scene>) => void;
-    onParam: (key: string, value: unknown) => void;
-    onType: (type: string) => void;
-    onMove: (delta: number) => void;
-    onDuplicate: () => void;
-    onRemove: () => void;
-    onAddAfter: () => void;
-}) {
-    const meta = TYPES.find((t) => t.value === scene.type);
-    const seconds = Math.max(1, Math.round(wordsIn(scene.spoken) / 2.7));
-
+function Row({ label, value }: { label: string; value: string }) {
     return (
-        <div className='panel panel-accent p-5'>
-            <div className='flex items-center gap-3 mb-4'>
-                <span className='mono text-xs text-[var(--cr-motion-faint)]'>{String(index + 1).padStart(2, '0')}</span>
-                <select
-                    className='panel px-2.5 py-1.5 text-sm outline-none focus:border-[var(--cr-motion-violet)] bg-transparent'
-                    value={scene.type}
-                    onChange={(e) => onType(e.target.value)}>
-                    {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
-                <span className='text-xs text-[var(--cr-motion-faint)] hidden md:inline'>{meta?.hint}</span>
-                <span className='mono text-xs text-[var(--cr-motion-faint)] ml-auto'>~{seconds}s</span>
-                <div className='flex gap-1 text-[var(--cr-motion-faint)]'>
-                    <button className='w-7 h-7 grid place-items-center hover:text-[var(--cr-motion-ink)] disabled:opacity-30' title='Move up' disabled={index === 0} onClick={() => onMove(-1)}>↑</button>
-                    <button className='w-7 h-7 grid place-items-center hover:text-[var(--cr-motion-ink)] disabled:opacity-30' title='Move down' disabled={index === total - 1} onClick={() => onMove(1)}>↓</button>
-                    <button className='w-7 h-7 grid place-items-center hover:text-[var(--cr-motion-ink)]' title='Duplicate' onClick={onDuplicate}>⧉</button>
-                    <button className='w-7 h-7 grid place-items-center hover:text-[#e5484d]' title='Remove' onClick={onRemove}>✕</button>
-                </div>
-            </div>
-
-            {scene.type !== 'endcard' && (
-                <label className='block mb-4'>
-                    <span className='eyebrow block mb-1.5'>Narration — what the voice says</span>
-                    <textarea
-                        className='w-full panel px-3 py-2 text-sm outline-none focus:border-[var(--cr-motion-violet)] bg-transparent resize-y min-h-[3.5rem]'
-                        rows={2}
-                        value={scene.spoken}
-                        onChange={(e) => onChange({ spoken: e.target.value })} />
-                </label>
-            )}
-
-            <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
-                <ParamsEditor scene={scene} onParam={onParam} />
-            </div>
-
-            <div className='mt-3'>
-                <button className='mono text-[11px] text-[var(--cr-motion-faint)] hover:text-[var(--cr-motion-ink)]' onClick={onAddAfter}>
-                    + scene after this
-                </button>
-            </div>
+        <div className='flex items-center gap-4 py-1.5 border-b border-[rgba(255,255,255,0.05)]'>
+            <span className='eyebrow w-32'>{label}</span>
+            <span className='mono text-xs'>{value}</span>
         </div>
     );
 }
 
 /** The type-specific visual parameters, one structured control each - never raw JSON. */
-function ParamsEditor({ scene, onParam }: { scene: Scene; onParam: (key: string, value: unknown) => void }) {
+function ParamsEditor({ scene, onParam }: { scene: { type: string; params: Record<string, unknown> }; onParam: (key: string, value: unknown) => void }) {
     const p = scene.params;
     const set = onParam;
 

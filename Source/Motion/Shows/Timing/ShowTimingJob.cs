@@ -104,24 +104,66 @@ public class TimeShowStep(
 
         var audioDuration = currentState.DurationSeconds > 0 ? currentState.DurationSeconds : Wav.ReadDuration(wavPath);
 
-        // collect the lyric lines: one per sentence, tagged with the positional scene id
+// Per-scene takes give true word timing: each scene's audio is transcribed on its own
+        // and placed at its exact offset in the assembled track - no window estimation.
         var lines = new List<(string SceneId, string Text, double WindowStart, double WindowEnd)>();
-        double windowStart = 0;
-        const double SceneGap = 0.45;
-        for (var i = 0; i < plan.Scenes.Count; i++)
+        IReadOnlyList<TranscribedWord> words;
+        var scenesJson = ShowArtifactStore.ReadTextOrNull(artifactStore.ScenesJson(showId));
+        if (scenesJson is not null)
         {
-            var spoken = plan.Scenes[i].Spoken.Trim();
-            if (spoken.Length == 0) continue;
-            foreach (var sentence in ShowTimingData.SplitIntoLines(spoken))
+            var offsetWords = new List<TranscribedWord>();
+            using var scenesDoc = System.Text.Json.JsonDocument.Parse(scenesJson);
+            foreach (var scene in scenesDoc.RootElement.GetProperty("scenes").EnumerateArray())
             {
-                lines.Add(($"scene-{i + 1}", sentence, windowStart, windowStart + EstimateDuration(sentence)));
-            }
-            windowStart += EstimateDuration(spoken) + SceneGap;
-        }
+                var sceneId = scene.GetProperty("scene_id").GetString()!;
+                var spoken = scene.GetProperty("spoken").GetString() ?? string.Empty;
+                var sceneOffset = scene.GetProperty("offset").GetDouble();
+                var file = scene.GetProperty("file").GetString()!;
+                var takePath = System.IO.Path.Combine(artifactStore.FolderFor(showId), file);
 
-        var words = transcriber.IsEnabled
-            ? await transcriber.TranscribeWithWordTimings(wavPath, cancellationToken)
-            : [];
+                var takeWords = transcriber.IsEnabled && File.Exists(takePath)
+                    ? await transcriber.TranscribeWithWordTimings(takePath, cancellationToken)
+                    : System.Array.Empty<TranscribedWord>();
+
+                // line windows from the actual words of this take, moved into show time
+                var wordsInTake = takeWords.Count > 0 ? takeWords : FallbackWords(spoken, sceneOffset);
+                var wordCursor = 0;
+                foreach (var sentence in ShowTimingData.SplitIntoLines(spoken))
+                {
+                    var sentenceWordCount = sentence.Split(' ', System.StringSplitOptions.RemoveEmptyEntries).Length;
+                    var slice = wordsInTake.Skip(wordCursor).Take(sentenceWordCount).ToList();
+                    wordCursor += sentenceWordCount;
+                    var start = slice.Count > 0 ? sceneOffset + slice[0].Start : sceneOffset;
+                    var end = slice.Count > 0 ? sceneOffset + slice[^1].End : start + 0.6;
+                    lines.Add((sceneId, sentence, start, end));
+                    foreach (var w in slice)
+                    {
+                        offsetWords.Add(new TranscribedWord(w.Word, sceneOffset + w.Start, sceneOffset + w.End));
+                    }
+                }
+            }
+            words = offsetWords;
+        }
+        else
+        {
+            // legacy artifacts without a scene manifest: estimate the windows, transcribe the mix
+            double windowStart = 0;
+            const double SceneGap = 0.45;
+            for (var i = 0; i < plan.Scenes.Count; i++)
+            {
+                var spoken = plan.Scenes[i].Spoken.Trim();
+                if (spoken.Length == 0) continue;
+                foreach (var sentence in ShowTimingData.SplitIntoLines(spoken))
+                {
+                    lines.Add(($"scene-{i + 1}", sentence, windowStart, windowStart + EstimateDuration(sentence)));
+                }
+                windowStart += EstimateDuration(spoken) + SceneGap;
+            }
+
+            words = transcriber.IsEnabled
+                ? await transcriber.TranscribeWithWordTimings(wavPath, cancellationToken)
+                : System.Array.Empty<TranscribedWord>();
+        }
 
         var lyricsJson = ShowTimingData.BuildLyricsJson(lines, words, audioDuration);
         ShowArtifactStore.WriteText(artifactStore.LyricsJson(showId), lyricsJson);
@@ -146,5 +188,23 @@ public class TimeShowStep(
     {
         var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
         return Math.Max(0.6, words * 0.34);
+    }
+
+    /// <summary>
+    /// Estimated words for a scene when STT is unavailable - spread across the take so the
+    /// offsets stay honest even without a transcription.
+    /// </summary>
+    static IReadOnlyList<TranscribedWord> FallbackWords(string spoken, double sceneOffset)
+    {
+        var words = spoken.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var result = new List<TranscribedWord>();
+        var t = sceneOffset;
+        foreach (var word in words)
+        {
+            var duration = Math.Max(0.12, word.Length * 0.055);
+            result.Add(new TranscribedWord(word, t, t + duration));
+            t += duration;
+        }
+        return result;
     }
 }

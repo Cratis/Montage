@@ -53,6 +53,16 @@ export class Player {
     }
   }
 
+  /** Play exactly one plate: seek to its start, confine to its window, stop at its end (or loop). */
+  playPlate(id: string, loop = false) {
+    const entry = this.engine.timeline.find((e) => e.id === id) ?? this.engine.timeline[id as unknown as number];
+    if (!entry) return;
+    this.loopPlate = loop;
+    this.plateRange = { id: entry.id, start: entry.start, end: entry.end };
+    this.seek(entry.start + 0.001);
+    if (!this.playing) this.toggle();
+  }
+
   private jumpPlate(dir: 1 | -1) {
     const tl = this.engine.timeline;
     const next = dir > 0
@@ -85,12 +95,10 @@ export class Player {
       this.lastNow = now;
       this.t += dt;
       if (this.audio && Math.abs(this.audio.currentTime - this.t) > 0.25) this.t = this.audio.currentTime;
-      const range = this.loopPlate
-        ? (this.plateRange ?? this.plateAt(this.t))
-        : null;
+      const range = this.plateRange ?? (this.loopPlate ? this.plateAt(this.t) : null);
       const end = range ? range.end : this.engine.duration;
       if (this.t >= end) {
-        if (range) { this.t = range.start; if (this.audio) this.audio.currentTime = this.t; }
+        if (range && this.loopPlate) { this.t = range.start; if (this.audio) this.audio.currentTime = this.t; }
         else { this.t = end; this.playing = false; this.audio?.pause(); this.syncPlayBtn(); }
       }
       this.render();

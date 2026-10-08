@@ -15,6 +15,8 @@ namespace Motion.Shows.Creation;
 /// <param name="Tone">Optional tone hint (e.g. "technical, calm" or "energetic launch").</param>
 /// <param name="Audience">Optional audience hint (e.g. "developers evaluating event sourcing").</param>
 /// <param name="AIProviderId">Optional identity of the AI provider that will plan the show.</param>
+/// <param name="PlanManually">True when the user will define the slides by hand.</param>
+/// <param name="PlanManually">True when the user will define the slides by hand.</param>
 [EventType]
 public record ShowCreated(
     string Title,
@@ -23,4 +25,5 @@ public record ShowCreated(
     double TargetDurationSeconds,
     string Tone,
     string Audience,
-    string AIProviderId = "");
+    string AIProviderId = "",
+    bool PlanManually = false);

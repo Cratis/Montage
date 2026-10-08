@@ -16,6 +16,7 @@ namespace Motion.Shows.Creation;
 /// <param name="Tone">Optional tone hint.</param>
 /// <param name="Audience">Optional audience hint.</param>
 /// <param name="AIProviderId">Optional identity of the AI provider that will plan the show.</param>
+/// <param name="PlanManually">True skips the language model: the user defines the slides by hand in the storyboard.</param>
 [Command]
 public record CreateShow(
     string Description,
@@ -24,7 +25,8 @@ public record CreateShow(
     double? TargetDurationSeconds,
     string? Tone,
     string? Audience,
-    string? AIProviderId)
+    string? AIProviderId,
+    bool PlanManually)
 {
     /// <summary>
     /// Handles the command by producing the <see cref="ShowCreated"/> event.
@@ -33,13 +35,17 @@ public record CreateShow(
     public (EventSourceId, ShowCreated) Handle()
     {
         var showId = ShowId.New();
+        var title = Title?.Trim() is { Length: > 0 } t ? t : "Untitled show";
+        var voice = string.IsNullOrWhiteSpace(Voice) ? "af_heart" : Voice;
+        var targetDuration = TargetDurationSeconds is > 0 ? Math.Clamp(TargetDurationSeconds.Value, 15, 300) : 60;
         return (showId, new ShowCreated(
-            Title?.Trim() is { Length: > 0 } t ? t : "Untitled show",
+            title,
             Description.Trim(),
-            string.IsNullOrWhiteSpace(Voice) ? "af_heart" : Voice,
-            TargetDurationSeconds is > 0 ? Math.Clamp(TargetDurationSeconds.Value, 15, 300) : 60,
+            voice,
+            targetDuration,
             Tone?.Trim() ?? string.Empty,
             Audience?.Trim() ?? string.Empty,
-            AIProviderId?.Trim() ?? string.Empty));
+            AIProviderId?.Trim() ?? string.Empty,
+            PlanManually));
     }
 }

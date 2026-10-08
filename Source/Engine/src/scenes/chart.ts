@@ -6,6 +6,7 @@ import { Scene, type Frame } from '../core/scene';
 import { ambient, eyebrow } from '../core/canvas';
 import { font, ellipsize } from '../core/text';
 import { ease, clamp, inv } from '../core/util';
+import { enter, isFade, isPop, motionOf } from '../core/motion';
 import { withAlpha } from '../core/theme';
 
 export class Chart extends Scene {
@@ -113,13 +114,22 @@ export class Chart extends Scene {
       const n = values.length;
       const slot = plotW / n;
       const barW = Math.min(96, slot * 0.55);
+      const motion = motionOf(params, 'grow');
       values.forEach((v, i) => {
-        const bk = ease.outExpo(clamp(inv(0.35 + (span * i) / n, 0.35 + (span * (i + 1)) / n, lt)));
+        const bk = Math.max(0, Math.min(1, enter(motion, lt, 0.35 + (span * i) / n, 0.35 + (span * (i + 1)) / n)));
         if (bk <= 0) return;
         const h = (v / max) * plotH * bk;
         const x = x0 + slot * i + (slot - barW) / 2;
         const y = y1 - h;
         const isMax = i === maxIdx;
+        ctx.save();
+        if (isFade(motion)) ctx.globalAlpha = bk;
+        else if (isPop(motion)) {
+          // overshoot scale around the bar's own baseline corner
+          ctx.translate(x + barW / 2, y1);
+          ctx.scale(bk, bk);
+          ctx.translate(-(x + barW / 2), -y1);
+        }
         ctx.fillStyle = isMax ? theme.accent : withAlpha(theme.accent, 0.38);
         ctx.beginPath();
         ctx.roundRect(x, y, barW, h, [8, 8, 0, 0]);
@@ -134,6 +144,7 @@ export class Chart extends Scene {
           ctx.fillText(String(Math.round(v * 100) / 100), x + barW / 2, y - 12);
           ctx.restore();
         }
+        ctx.restore();
       });
     }
 

@@ -12,5 +12,6 @@ namespace Motion.Shows.Storyboard;
 /// </summary>
 /// <param name="Voice">The TTS voice to speak the narration with.</param>
 /// <param name="PlanJson">The full plan as JSON - the same shape the planner produces.</param>
+/// <param name="StartProduction">True re-runs production (voice onward); a plain save only persists the story.</param>
 [EventType]
-public record ShowStoryboardSaved(string Voice, string PlanJson);
+public record ShowStoryboardSaved(string Voice, string PlanJson, bool StartProduction = true);

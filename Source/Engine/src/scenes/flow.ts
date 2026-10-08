@@ -5,6 +5,7 @@ import { Scene, type Frame } from '../core/scene';
 import { ambient, panel, arrow, eyebrow } from '../core/canvas';
 import { font, ellipsize } from '../core/text';
 import { ease, clamp, inv } from '../core/util';
+import { enter, isFade, isPop, motionOf, slideOffset } from '../core/motion';
 import { withAlpha } from '../core/theme';
 
 interface Node { label: string; sub?: string }
@@ -67,16 +68,27 @@ export class Flow extends Scene {
       return { x: rx + col * (nodeW + 70), y: rowY(row) };
     });
 
+    const motion = motionOf(params, 'pop');
     nodes.forEach((n, i) => {
       const { x, y } = pos[i]!;
-      const appear = ease.outBack(clamp(inv(0.15 + i * 0.12, 0.55 + i * 0.12, lt)));
+      const raw = Math.max(0, Math.min(1.2, enter(motion, lt, 0.15 + i * 0.12, 0.55 + i * 0.12)));
+      const appear = clamp(raw);
       const isActive = i === active;
       const isPast = i < active;
 
       ctx.save();
-      ctx.translate(x + nodeW / 2, y + nodeH / 2);
-      ctx.scale(appear, appear);
-      ctx.translate(-(x + nodeW / 2), -(y + nodeH / 2));
+      if (isFade(motion)) ctx.globalAlpha = appear;
+      else {
+        if (isPop(motion)) {
+          ctx.translate(x + nodeW / 2, y + nodeH / 2);
+          ctx.scale(appear, appear);
+          ctx.translate(-(x + nodeW / 2), -(y + nodeH / 2));
+        } else {
+          const dx = slideOffset(motion, (1 - appear) * 70);
+          ctx.globalAlpha = Math.min(1, appear * 1.4);
+          ctx.translate(dx, 0);
+        }
+      }
 
       // pulse when the stage is active and mid-transition to the next
       const pulse = isActive ? Math.sin(frac * Math.PI) : 0;

@@ -91,30 +91,43 @@ function CreateShowDialog({ visible, onHide }: { visible: boolean; onHide: () =>
     const [providers] = AllAIProviders.use();
     const [busy, setBusy] = useState(false);
 
-    const create = async () => {
+    const create = async (planManually: boolean, destination: string) => {
         setBusy(true);
         try {
+            setValues({ planManually } as never);
             const result = await command.execute();
             if (result.isSuccess) {
                 clear();
                 onHide();
                 const id = result.response;
-                if (id) navigate(`/shows/${id}`);
+                if (id) navigate(destination.replace(':id', id.toString()));
             }
         } finally {
             setBusy(false);
         }
     };
 
+    const canCreate = (command.description ?? '').trim().length >= 8;
     const footer = (
         <div className='flex justify-end gap-2'>
             <Button label='Cancel' severity='secondary' text onClick={onHide} />
             <Button
-                label='Plan & produce'
+                label='Define slides'
+                icon='pi pi-file-edit'
+                severity='secondary'
+                outlined
+                loading={busy}
+                disabled={!canCreate}
+                title='Create the show and go straight to the storyboard — you add the scenes'
+                onClick={() => create(true, '/shows/:id/storyboard')}
+            />
+            <Button
+                label='Try your luck'
                 icon='pi pi-sparkles'
                 loading={busy}
-                disabled={(command.description ?? '').trim().length < 8}
-                onClick={create}
+                disabled={!canCreate}
+                title='Create the show and let the language model plan the whole thing'
+                onClick={() => create(false, '/shows/:id')}
             />
         </div>
     );

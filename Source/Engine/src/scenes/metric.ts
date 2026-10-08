@@ -5,6 +5,7 @@ import { Scene, type Frame } from '../core/scene';
 import { ambient, formatNumber, chip } from '../core/canvas';
 import { font } from '../core/text';
 import { ease, clamp, inv } from '../core/util';
+import { enter, motionOf } from '../core/motion';
 import { withAlpha } from '../core/theme';
 
 export class Metric extends Scene {
@@ -21,9 +22,11 @@ export class Metric extends Scene {
     const delta = params.delta != null ? String(params.delta) : '';
     const spark: number[] = Array.isArray(params.spark) ? params.spark.map(Number) : [];
 
-    // count-up: settles by 65% of the plate
-    const k = ease.outExpo(clamp(inv(0.2, (f.end - f.start) * 0.65, lt)));
-    const current = value * k;
+    // count-up (the default): settles by 65% of the plate; 'fade' just reveals the final value
+    const motion = motionOf(params, 'count');
+    const k = Math.max(0, Math.min(1, enter(motion, lt, 0.2, (f.end - f.start) * 0.65)));
+    const current = motion.preset === 'fade' ? value : value * k;
+    const revealAlpha = motion.preset === 'fade' ? k : 1;
 
     const format = (v: number): string => {
       switch (kind) {
@@ -42,7 +45,7 @@ export class Metric extends Scene {
 
     ctx.save();
     ctx.translate(0, (1 - nk) * 26);
-    ctx.globalAlpha = nk;
+    ctx.globalAlpha = nk * revealAlpha;
     ctx.fillStyle = theme.ink;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';

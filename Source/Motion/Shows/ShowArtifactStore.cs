@@ -44,6 +44,19 @@ public sealed class ShowArtifactStore(IOptions<MotionOptions> options, IHostEnvi
     /// </summary>
     public string PlanJson(ShowId showId) => Path.Combine(FolderFor(showId), "plan.json");
     public string VoiceoverWav(ShowId showId) => Path.Combine(FolderFor(showId), "voiceover.wav");
+    public string VoiceoverFolderFor(ShowId showId)
+    {
+        var folder = Path.Combine(FolderFor(showId), "voiceover");
+        Directory.CreateDirectory(folder);
+        return folder;
+    }
+    public string ScenesJson(ShowId showId) => Path.Combine(VoiceoverFolderFor(showId), "scenes.json");
+    public string SnapshotsFolderFor(ShowId showId)
+    {
+        var folder = Path.Combine(FolderFor(showId), "snapshot");
+        Directory.CreateDirectory(folder);
+        return folder;
+    }
     public string VoiceoverAudio(ShowId showId) => Path.Combine(FolderFor(showId), "voiceover.mp3");
     public string LyricsJson(ShowId showId) => Path.Combine(FolderFor(showId), "lyrics.json");
     public string AudioAnalysisJson(ShowId showId) => Path.Combine(FolderFor(showId), "audio.json");

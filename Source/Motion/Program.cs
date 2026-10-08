@@ -15,6 +15,7 @@ builder.Services.AddOptions<MotionOptions>().BindConfiguration("Cratis:Motion").
 builder.Services.AddSingleton<Motion.Shows.Packaging.IShowPackager, Motion.Shows.Packaging.ShowPackager>();
 builder.Services.AddSingleton<Motion.Shows.Packaging.IFfmpeg, Motion.Shows.Packaging.Ffmpeg>();
 builder.Services.AddSingleton<Motion.Shows.Rendering.IVideoRenderer, Motion.Shows.Rendering.EngineRenderer>();
+builder.Services.AddSingleton<Motion.Shows.Rendering.IEngineStills, Motion.Shows.Rendering.EngineStills>();
 builder.Services.AddSingleton<Motion.Speech.ISpeechSynthesizer, Motion.Speech.SpeechSynthesizer>();
 builder.Services.AddSingleton<Motion.Speech.ISpeechTranscriber, Motion.Speech.SpeechTranscriber>();
 
@@ -77,6 +78,19 @@ app.UseStaticFiles(new StaticFileOptions
     RequestPath = "/renders",
     ServeUnknownFileTypes = true,
     OnPrepareResponse = ctx => ctx.Context.Response.ContentType = "video/mp4",
+});
+
+// Voice catalog: what the TTS service actually offers, and an audition line per voice.
+// Minimal API endpoints - Arc owns the /api space for commands and queries, so controllers
+// would never be reached here.
+var voiceCatalog = new Motion.Speech.VoiceCatalog(
+    app.Services.GetRequiredService<Motion.Speech.ISpeechSynthesizer>(),
+    app.Services.GetRequiredService<IOptions<MotionOptions>>());
+app.MapGet("/api/motion/voices", async () => Results.Json(await voiceCatalog.All()));
+app.MapGet("/api/motion/voices/preview", async (string voice) =>
+{
+    var (contentType, bytes, status, error) = await voiceCatalog.Preview(voice);
+    return status == 200 ? Results.File(bytes, contentType) : Results.Problem(error, statusCode: status);
 });
 
 app.MapFallbackToFile("/index.html");

@@ -89,7 +89,12 @@ async function boot() {
   };
   (window as any).__motion = api;
 
-  player.start(startAt);
+  const sceneParam = params.get('scene');
+  if (sceneParam) {
+    player.playPlate(sceneParam, params.get('loop') === '1');
+  } else {
+    player.start(startAt);
+  }
   if (exportMode) player.setHudVisible(false);
 }
 

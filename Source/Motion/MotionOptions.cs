@@ -152,12 +152,12 @@ public sealed record RenderOptions
     /// <summary>
     /// Gets the path to the engine's render script (relative to the content root when relative).
     /// </summary>
-    public string EngineRenderScript { get; init; } = "../../engine/scripts/render.ts";
+    public string EngineRenderScript { get; init; } = "../Engine/scripts/render.ts";
 
     /// <summary>
     /// Gets the working directory for the render (the engine package root, for its node_modules).
     /// </summary>
-    public string WorkingDirectory { get; init; } = "../../engine";
+    public string WorkingDirectory { get; init; } = "../Engine";
 
     /// <summary>
     /// Gets the x264 CRF quality (lower is better).

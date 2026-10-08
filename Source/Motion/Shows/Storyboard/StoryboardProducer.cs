@@ -23,6 +23,8 @@ public sealed class StoryboardProducer(IJobsManagerAccessor jobs) : IReactor
     /// <returns>Awaitable task.</returns>
     [OnceOnly]
     public Task On(ShowStoryboardSaved @event, EventContext context) =>
-        jobs.For(context).Start<IVoiceoverSynthesisJob, VoiceoverSynthesisRequest>(new(
-            context.EventSourceId.Value));
+        !@event.StartProduction
+            ? Task.CompletedTask
+            : jobs.For(context).Start<IVoiceoverSynthesisJob, VoiceoverSynthesisRequest>(new(
+                context.EventSourceId.Value));
 }

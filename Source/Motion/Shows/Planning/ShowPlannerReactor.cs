@@ -29,13 +29,15 @@ public sealed class ShowPlannerReactor(
     /// <returns>Awaitable task.</returns>
     [OnceOnly]
     public Task On(ShowCreated @event, EventContext context) =>
-        jobs.For(context).Start<IShowPlanningJob, ShowPlanningRequest>(new(
-            ShowId.From(context.EventSourceId).Value.ToString(),
-            @event.Description,
-            @event.TargetDurationSeconds,
-            @event.Tone,
-            @event.Audience,
-            @event.AIProviderId));
+        @event.PlanManually
+            ? Task.CompletedTask
+            : jobs.For(context).Start<IShowPlanningJob, ShowPlanningRequest>(new(
+                ShowId.From(context.EventSourceId).Value.ToString(),
+                @event.Description,
+                @event.TargetDurationSeconds,
+                @event.Tone,
+                @event.Audience,
+                @event.AIProviderId));
 
     /// <summary>
     /// Plans the show when a re-plan is requested - the description and provider come from the read

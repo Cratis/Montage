@@ -1,7 +1,7 @@
 // Copyright (c) Cratis. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Button } from '@cratis/components/Common';
 import { Show, ObserveAll } from '../../Api/Shows/Listing';
@@ -152,11 +152,8 @@ export function ShowDetail() {
 
                 {show.audioPath && (
                     <div className='panel p-5'>
-                        <div className='eyebrow mb-3'>voiceover</div>
-                        <audio controls className='w-full' src={`/packages/${show.id}/${show.audioPath}`} />
-                        <div className='mono text-xs text-[var(--cr-motion-faint)] mt-2'>
-                            {show.audioDurationSeconds.toFixed(1)}s · spoken by the self-hosted voice
-                        </div>
+                        <div className='eyebrow mb-3'>voiceover, scene by scene</div>
+                        <SceneAuditions showId={show.id.toString()} planJson={show.planJson} />
                     </div>
                 )}
 
@@ -202,6 +199,55 @@ export function ShowDetail() {
                     </div>
                 </section>
             )}
+        </div>
+    );
+}
+
+/**
+ * Per-scene recordings: one take per scene, played from its own file. The single mixed
+ * voiceover is a pipeline artifact now - the editor hears (and retries) scenes individually.
+ */
+export function SceneAuditions({ showId, planJson }: { showId: string; planJson?: string }) {
+    const plan = useMemo(() => ShowPlan.parse(planJson), [planJson]);
+    const [meta, setMeta] = useState<{ index: number; file: string; duration: number; spoken: string }[]>([]);
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch(`/packages/${showId}/voiceover/scenes.json`);
+                if (res.ok && !cancelled) {
+                    const doc = await res.json();
+                    setMeta(doc.scenes ?? []);
+                }
+            } catch { /* the pipeline has not spoken yet */ }
+        })();
+        return () => { cancelled = true; };
+    }, [showId, planJson]);
+
+    if (meta.length === 0) {
+        return (
+            <div className='flex flex-col gap-2'>
+                <audio controls className='w-full' src={`/packages/${showId}/voiceover.mp3`} />
+                <div className='mono text-xs text-[var(--cr-motion-faint)]'>mixed track · per-scene takes appear once the voice stage runs</div>
+            </div>
+        );
+    }
+
+    return (
+        <div className='flex flex-col gap-1.5'>
+            {meta.map((scene) => (
+                <div key={scene.index} className='flex items-center gap-3 py-1.5 border-b border-[rgba(255,255,255,0.05)] last:border-0'>
+                    <button
+                        className='w-8 h-8 flex-shrink-0 rounded-full border border-[rgba(255,255,255,0.14)] grid place-items-center hover:border-[var(--cr-motion-violet)] text-xs'
+                        title={`Play scene ${scene.index} recording`}
+                        onClick={() => { void new Audio(`/packages/${showId}/${scene.file}`).play(); }}>
+                        ▶
+                    </button>
+                    <span className='mono text-[11px] text-[var(--cr-motion-faint)] w-14'>{String(scene.index).padStart(2, '0')} · {scene.duration.toFixed(1)}s</span>
+                    <span className='text-sm text-[var(--cr-motion-dim)] truncate flex-1'>{scene.spoken}</span>
+                </div>
+            ))}
         </div>
     );
 }
