@@ -5,23 +5,48 @@
 import { Scene, type Frame } from '../core/scene';
 import { ambient } from '../core/canvas';
 import { font } from '../core/text';
-import { Lyrics } from '../core/lyrics';
+import { Lyrics, type Line } from '../core/lyrics';
 import { ease, clamp, inv } from '../core/util';
 import { withAlpha } from '../core/theme';
 
-export class Kinetic extends Scene {
-  override render(f: Frame, ctx: CanvasRenderingContext2D): void {
-    const { W, H, theme, lyrics } = this.ctx;
-    const t = f.t, lt = f.lt;
-    ambient(ctx, W, H, theme, t);
+/** Pacing: how the narration sits in the scene's time (params.pacing). */
+type Pacing = { leadIn: number; hold: number };
+const pacingOf = (params: Record<string, any>): Pacing => {
+  const raw = params?.pacing ?? {};
+  return { leadIn: Math.max(0, Number(raw.leadIn) || 0), hold: Math.max(0, Number(raw.hold) || 0) };
+};
 
-    const line = lyrics.lineAt(t) ?? lyrics.lastLine(t);
+export class Kinetic extends Scene {
+  private sceneLines: Line[] = [];
+  private pacing: Pacing = { leadIn: 0, hold: 0 };
+
+  override init(): Promise<void> | void {
+    // this scene speaks only its own lines: a neighbour scene's text must never slide
+    // in across the boundary, and its words must never pull the block around
+    const all = this.ctx.lyrics.lines;
+    this.sceneLines = all.filter((l) => l.sceneId === this.ctx.id);
+    if (this.sceneLines.length === 0) this.sceneLines = all; // legacy data without scene ids
+    this.pacing = pacingOf(this.ctx.params);
+  }
+
+  override render(f: Frame, ctx: CanvasRenderingContext2D): void {
+    const { W, H, theme } = this.ctx;
+    // lead-in delays the karaoke against the scene's build, not the other way around
+    const t = f.t - this.pacing.leadIn, lt = f.lt;
+    ambient(ctx, W, H, theme, f.t);
+
+    const lines = this.sceneLines;
+    if (lines.length === 0) return;
+    const line = lines.find((l) => t >= l.start && t < l.end)
+      ?? [...lines].reverse().find((l) => l.start <= t)
+      ?? lines[0];
     if (!line) return;
 
-    // window: current line + one line of context above/below
-    const prev = lyrics.lines[line.i - 1];
-    const next = lyrics.lines[line.i + 1];
-    const show: typeof lyrics.lines = [];
+    // window: current line + one line of context above/below, this scene only
+    const li = lines.indexOf(line);
+    const prev = lines[li - 1];
+    const next = lines[li + 1];
+    const show: Line[] = [];
     if (prev && line.start - prev.end < 1.2) show.push(prev);
     show.push(line);
     if (next && next.start - line.end < 1.2) show.push(next);
@@ -34,7 +59,7 @@ export class Kinetic extends Scene {
     // the viewport, or the text runs off both edges
     const maxW = W * 0.86;
     const spaceW = ctx.measureText(' ').width * 1.1;
-    type Row = { line: typeof lyrics.lines[number]; indices: number[]; width: number; widths: number[] };
+    type Row = { line: Line; indices: number[]; width: number; widths: number[] };
     const rows: Row[] = [];
     for (const l of show) {
       const widths = l.words.map((w) => ctx.measureText(w.w).width);
@@ -68,12 +93,15 @@ export class Kinetic extends Scene {
       const y = y0 + ri * lh;
 
       const isCurrent = l.i === line.i;
+      const lineIsLast = l === lines[lines.length - 1];
       const lineAlpha = isCurrent ? 1 : 0.36;
 
       for (const wi of row.indices) {
         const w = words[wi]!;
-        const prog = Lyrics.wordProgress(w, t);
-        const active = prog > 0 && prog < 1;
+        // hold lingers the highlight on the final word past its spoken end
+        const hold = lineIsLast && wi === words.length - 1 ? this.pacing.hold : 0;
+        const prog = Lyrics.wordProgress(w, t, hold);
+        const active = prog > 0 && t < w.end + hold;
         // pop on word onset, decaying through the word
         const popT = clamp((t - w.start) / 0.22);
         const pop = active ? ease.outBack(popT) * 0.06 : 0;

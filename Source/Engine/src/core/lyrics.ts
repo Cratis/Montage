@@ -3,7 +3,7 @@
 // in the editor backend produces.
 
 export interface Word { w: string; start: number; end: number; conf?: number; line: number; gi: number }
-export interface Line { i: number; text: string; start: number; end: number; words: Word[] }
+export interface Line { i: number; sceneId: string; text: string; start: number; end: number; words: Word[] }
 
 const fold = (s: string) => s.toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/\s+/g, ' ').trim();
 
@@ -19,7 +19,7 @@ export class Lyrics {
         line: li, gi: 0,
       }));
       const text = String(l.text ?? words.map((w) => w.w).join(' '));
-      return { i: li, text, start: l.start ?? words[0]?.start ?? 0, end: l.end ?? words[words.length - 1]?.end ?? 0, words };
+      return { i: li, sceneId: String(l.scene_id ?? l.sceneId ?? ''), text, start: l.start ?? words[0]?.start ?? 0, end: l.end ?? words[words.length - 1]?.end ?? 0, words };
     });
     this.words = this.lines.flatMap((l) => l.words);
     this.words.forEach((w, i) => (w.gi = i));
@@ -61,9 +61,10 @@ export class Lyrics {
   }
 
   /** Sung progress of a word at t: 0 before start, 1 after end, linear inside. */
-  static wordProgress(w: Word, t: number): number {
+  static wordProgress(w: Word, t: number, hold = 0): number {
     if (t <= w.start) return 0;
-    if (t >= w.end) return 1;
+    if (t >= w.end + hold) return 1;
+    if (hold > 0 && t >= w.end) return 1; // held: the highlight lingers past the word
     return (t - w.start) / Math.max(1e-3, w.end - w.start);
   }
 
