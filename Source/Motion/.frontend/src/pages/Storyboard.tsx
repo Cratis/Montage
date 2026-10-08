@@ -529,6 +529,7 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile, registe
     const previewRef = useRef<HTMLIFrameElement | null>(null);
     const dragRef = useRef<number | null>(null);
     const scrubRef = useRef(false);
+    const downRef = useRef<{ x: number; y: number; time: number; hit: number } | null>(null);
     const groupAnchorRef = useRef<number | null>(null);
     const selectRectRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
     const lastSentRef = useRef(0);
@@ -795,6 +796,8 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile, registe
         const px = e.clientX - rect.left;
         const py = e.clientY - rect.top;
         const t = toTime(e);
+        const hit = hitWord(t);
+        downRef.current = { x: px, y: py, time: t, hit };
         // the playhead line wins if it is grabbed
         const phx = 14 + (playhead / Math.max(duration, 0.001)) * (rect.width - 28);
         if (Math.abs(px - phx) < 8 && py > 26) {
@@ -803,7 +806,6 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile, registe
             scrubTo(t);
             return;
         }
-        const hit = hitWord(t);
         if (hit >= 0) {
             e.currentTarget.setPointerCapture(e.pointerId);
             if (selected.includes(hit) && selected.length > 1) {
@@ -894,13 +896,24 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile, registe
         if (hit !== hover) { setHover(hit); draw(); }
     };
 
-    const onPointerUp = () => {
+    const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        const down = downRef.current;
+        downRef.current = null;
         scrubRef.current = false;
         groupAnchorRef.current = null;
         dragRef.current = null;
         if (selectRectRef.current) {
             selectRectRef.current = null;
             setSelectRect(null);
+        }
+        // a click without a drag jumps the playhead - to the word when a word was hit
+        if (down) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const dist = Math.hypot(e.clientX - rect.left - down.x, e.clientY - rect.top - down.y);
+            if (dist < 4) {
+                const jump = down.hit >= 0 && words[down.hit] ? words[down.hit].start : down.time;
+                scrubTo(jump);
+            }
         }
         draw();
     };
@@ -918,10 +931,13 @@ function TimingEditor({ showId, sceneNumber, offset, duration, takeFile, registe
             previewRef.current?.contentWindow?.postMessage('motion:pause', '*');
             return;
         }
-        if (!takeFile) audio.currentTime = offset + playhead;
-        else if (audio.currentSrc !== url) audio.src = url;
-        if (playhead >= duration - 0.05) { audio.currentTime = takeFile ? 0 : offset; setPlayhead(0); }
-        previewRef.current?.contentWindow?.postMessage({ motion: 'seek', t: offset + playhead }, '*');
+        // play from where the scrubber is - only a finished clip starts over
+        const startAt = playhead >= duration - 0.05 ? 0 : playhead;
+        const absolute = new URL(url, location.href).href;
+        if (audio.src !== absolute) audio.src = absolute;
+        audio.currentTime = takeFile ? startAt : offset + startAt;
+        setPlayhead(startAt);
+        previewRef.current?.contentWindow?.postMessage({ motion: 'seek', t: offset + startAt }, '*');
         void audio.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
     };
 
