@@ -87,7 +87,7 @@ public static class DemoShows
             Scene(
                 "kinetic",
                 "Because a scene is a pure function of time, the preview you scrub and the file you export are pixel identical. Always.",
-                """{ "emphasis": ["pure", "pixel", "identical"] }"""),
+                """{ "emphasis": ["pure", "pixel", "identical"], "pacing": { "hold": 0.5 } }"""),
 
             Scene(
                 "metric",
