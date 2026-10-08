@@ -15,7 +15,7 @@ namespace Motion.AI;
 public sealed record PlannedScene
 {
     /// <summary>
-    /// Gets the scene type from the engine's registry (title, kinetic, statement, steps, compare, flow, metric, chart, quote, code, endcard).
+    /// Gets the scene type from the engine's registry (title, kinetic, statement, steps, compare, flow, metric, chart, quote, code, endcard, image).
     /// </summary>
     public string Type { get; init; } = "kinetic";
 
@@ -67,6 +67,7 @@ public static partial class ShowPlanner
         - "quote": a quotation. params: text (max 25 words), attribution (optional).
         - "code": a code panel. params: title (optional), kicker (optional), language ("typescript"|"csharp"|"json"|"sql"), code (the code, \\n-separated, max 14 lines), highlight (optional array of 1-based line numbers).
         - "endcard": the closing card with brand and CTA. params: headline (3-7 words), cta (optional short URL or call to action).
+        - "image": one or more pictures on screen, each animated with its own motion. params: images (array of 1-3 {src (package-relative path like "images/shot.png" — only reference images that already exist in the show's assets), headline (optional 1-4 word caption chip), motion (optional "kenburns"|"zoom-in"|"zoom-out"|"pan"|"slide"|"pop"|"fade")}), headline (optional short scene headline under the images), text (optional one-line caption under the headline).
         """;
 
     /// <summary>

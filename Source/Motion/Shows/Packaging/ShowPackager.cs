@@ -62,6 +62,8 @@ public sealed class ShowPackager(ShowArtifactStore artifactStore) : IShowPackage
             File.Copy(voiceoverSource, Path.Combine(package, "audio", targetName), overwrite: true);
         }
 
+        CopyAssets(artifactStore.AssetsFolderFor(showId), package);
+
         File.WriteAllText(Path.Combine(package, "README.md"), $"""
             # {title}
 
@@ -75,6 +77,22 @@ public sealed class ShowPackager(ShowArtifactStore artifactStore) : IShowPackage
             Every frame is a deterministic function of time.
             """);
         return package;
+    }
+
+    /// <summary>
+    /// Copies the show's durable assets into the package, preserving relative paths.
+    /// </summary>
+    /// <param name="assets">The assets folder; missing means nothing to copy.</param>
+    /// <param name="package">The package directory.</param>
+    static void CopyAssets(string assets, string package)
+    {
+        if (!Directory.Exists(assets)) return;
+        foreach (var file in Directory.EnumerateFiles(assets, "*", SearchOption.AllDirectories))
+        {
+            var target = Path.Combine(package, Path.GetRelativePath(assets, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(file, target, overwrite: true);
+        }
     }
 
     /// <inheritdoc/>

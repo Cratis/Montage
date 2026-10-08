@@ -102,6 +102,41 @@ app.MapGet("/api/motion/voices/preview", async (string voice) =>
     return status == 200 ? Results.File(bytes, contentType) : Results.Problem(error, statusCode: status);
 });
 
+// Image uploads: durable per-show assets. Written under {show}/assets/images and mirrored
+// into the current package (when one exists) so the preview sees them immediately; the
+// packager copies assets into every package it writes, so they survive a re-package.
+var showArtifacts = app.Services.GetRequiredService<Motion.Shows.ShowArtifactStore>();
+app.MapPost("/api/motion/shows/{id}/images", async (string id, HttpRequest request) =>
+{
+    var form = await request.ReadFormAsync();
+    var file = form.Files.Count > 0 ? form.Files[0] : null;
+    if (file is null || file.Length == 0) return Results.BadRequest(new { error = "no file" });
+
+    var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+    string[] allowed = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"];
+    if (!allowed.Contains(extension)) return Results.BadRequest(new { error = $"unsupported file type '{extension}'" });
+
+    var showId = Motion.Shows.ShowId.From(id);
+    var name = $"{Guid.NewGuid().ToString("N")[..8]}{extension}";
+    var assets = Path.Combine(showArtifacts.AssetsFolderFor(showId), "images");
+    Directory.CreateDirectory(assets);
+    var assetsPath = Path.Combine(assets, name);
+    await using (var stream = File.Create(assetsPath))
+    {
+        await file.CopyToAsync(stream);
+    }
+
+    var package = showArtifacts.PackageDirectory(showId);
+    if (Directory.Exists(package))
+    {
+        var packageImages = Path.Combine(package, "images");
+        Directory.CreateDirectory(packageImages);
+        File.Copy(assetsPath, Path.Combine(packageImages, name), overwrite: true);
+    }
+
+    return Results.Ok(new { path = $"images/{name}" });
+});
+
 app.MapFallbackToFile("/index.html");
 
 await app.RunAsync();

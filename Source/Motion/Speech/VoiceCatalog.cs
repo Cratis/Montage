@@ -17,15 +17,13 @@ public sealed class VoiceCatalog(ISpeechSynthesizer synthesizer, IOptions<Motion
     /// <summary>
     /// The voices Kokoro ships, used when the service's own catalog can't be reached.
     /// </summary>
-    static readonly string[] FallbackVoices =
+    static readonly string[] _fallbackVoices =
     [
         "af_heart", "af_bella", "af_nicole", "af_aoede", "af_kore", "af_sarah", "af_sky", "af_alloy", "af_jessica", "af_nova", "af_river",
         "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam", "am_michael", "am_onyx", "am_puck",
         "bf_emma", "bf_isabella", "bf_alice", "bf_lily",
         "bm_george", "bm_fable", "bm_lewis", "bm_daniel",
     ];
-
-    static readonly JsonSerializerOptions _json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
     /// <summary>
     /// Lists the available voices - from the service's own catalog when reachable.
@@ -45,7 +43,7 @@ public sealed class VoiceCatalog(ISpeechSynthesizer synthesizer, IOptions<Motion
                     var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
                     if (doc.RootElement.TryGetProperty("voices", out var voices) && voices.ValueKind == JsonValueKind.Array)
                     {
-                        string Name(JsonElement v)
+                        static string Name(JsonElement v)
                         {
                             if (v.ValueKind == JsonValueKind.String) return v.GetString() ?? string.Empty;
                             foreach (var key in new[] { "id", "voice_id", "name" })
@@ -60,7 +58,7 @@ public sealed class VoiceCatalog(ISpeechSynthesizer synthesizer, IOptions<Motion
 
                         var names = voices.EnumerateArray().Select(Name)
                             .Where(v => !string.IsNullOrWhiteSpace(v))
-                            .OrderBy(v => v)
+                            .Order()
                             .ToArray();
                         if (names.Length > 0) return new { voices = names, source = "service" };
                     }
@@ -72,7 +70,7 @@ public sealed class VoiceCatalog(ISpeechSynthesizer synthesizer, IOptions<Motion
             }
         }
 
-        return new { voices = FallbackVoices, source = "built-in" };
+        return new { voices = _fallbackVoices, source = "built-in" };
     }
 
     /// <summary>

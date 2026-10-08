@@ -10,6 +10,7 @@ namespace Motion.Shows.Packaging;
 /// </summary>
 /// <param name="PackageDirectory">Unpacked package directory, relative to the show folder.</param>
 /// <param name="PackageZip">Path of the zip, relative to the show folder.</param>
+/// <param name="Render">True when the packaged show should go on to render video.</param>
 [EventType]
 public record ShowPackaged(string PackageDirectory, string PackageZip, bool Render = true);
 

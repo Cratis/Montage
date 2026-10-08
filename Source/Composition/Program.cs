@@ -17,6 +17,7 @@ var mongodb = builder.AddCratisChronicleMongoDB(imageTag: "7.0");
 // is exactly mongodb://localhost:27017/?directConnection=true, same as appsettings defaults.
 var mongodbServer = builder.Resources.OfType<ContainerResource>().Single(_ => _.Name == "mongodb-server");
 builder.CreateResourceBuilder(mongodbServer).WithEndpoint("tcp", endpoint => endpoint.Port = 27017);
+
 // A named volume so the event store, read models and configured providers survive an AppHost
 // restart - an anonymous volume dies with the container, and every restart then wiped every
 // provider and show the user had. The seeder is idempotent, so a populated store is safe.
@@ -52,9 +53,9 @@ var chronicleReady = builder
 // word by word (OpenAI-compatible /v1/audio/transcriptions on faster-whisper). Fixed host
 // ports so the Cratis:Motion defaults in appsettings.json work without configuration; the
 // transcriber downloads its model on first use, cached in a volume the compose file shares.
-
 var tts = builder
     .AddContainer("tts", "ghcr.io/remsky/kokoro-fastapi-cpu", "v0.9.0")
+
     // lambda form: the parameter form leaves the host port dynamic, which silently sends the
     // editor to whatever else listens on the configured port (the mock services) instead
     .WithEndpoint("http", endpoint =>

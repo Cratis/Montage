@@ -78,7 +78,7 @@ public sealed partial class EngineStills(IOptions<MotionOptions> options, IHostE
         }
 
         // the stills mode writes f_00003.00.png files in capture order - rename to scene-XX.png
-        var written = Directory.EnumerateFiles(outputFolder, "f_*.png").OrderBy(f => f).ToList();
+        var written = Directory.EnumerateFiles(outputFolder, "f_*.png").Order().ToList();
         var results = new List<string>();
         for (var i = 0; i < written.Count; i++)
         {

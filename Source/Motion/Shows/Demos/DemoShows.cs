@@ -19,6 +19,12 @@ public static class DemoShows
     /// <summary>Fixed event source id for the Monty Hall demo.</summary>
     public const string MontyHallId = "4c92e7b0-83f1-4a56-8d24-0e6b5c7f8402";
 
+    /// <summary>Fixed event source id for the assembly-language infographics demo.</summary>
+    public const string AssemblyLanguageId = "8f4c2a10-3b7d-4e52-9a61-0c5d84e2f7b3";
+
+    /// <summary>Fixed event source id for the picture-in-motion demo.</summary>
+    public const string PictureThisId = "2d95e6c8-71a4-4f03-b8ce-4512f9a06d77";
+
     /// <summary>
     /// The demo definitions: what the user "asked for" (the description seeded into
     /// ShowCreated) and the plan seeded into ShowPlanned.
@@ -54,6 +60,39 @@ public static class DemoShows
             Tone: "playful, clear",
             Audience: "everyone",
             Plan: DemoMontyHall()),
+
+        new Definition(
+            AssemblyLanguageId,
+            Title: "The Assembly Language of the Business",
+            Description: """
+                Turn the blog post "Screenplay — the assembly language of the business" into an
+                animated infographics video. IL gave .NET one format every tool could read; the
+                business side never had that until Screenplay. Show the pattern (one language in
+                the middle), a real .play slice, documents versus a compiling language, the
+                first hour as steps, six commands to the first event, and the board that appears
+                from a .play file. End on: one model, every tool.
+                """,
+            Voice: "af_heart",
+            TargetDurationSeconds: 55,
+            Tone: "sharp, essayistic, confident",
+            Audience: "architects and tech leads",
+            Plan: DemoAssemblyLanguage()),
+
+        new Definition(
+            PictureThisId,
+            Title: "Picture This",
+            Description: """
+                Show what it means for images on a slide to move with intent: three pictures with
+                three different motions — a Ken Burns drift, a zoom into the one line that
+                matters, a card that slides in — then a single quiet shot, a kinetic beat about
+                holding the last note, and a closing thought. Every image carries a direction:
+                what should happen to it, in plain words.
+                """,
+            Voice: "am_michael",
+            TargetDurationSeconds: 40,
+            Tone: "warm, visual, unhurried",
+            Audience: "everyone",
+            Plan: DemoPictureThis()),
 
     ];
 
@@ -180,6 +219,167 @@ public static class DemoShows
                 "endcard",
                 "Always switch.",
                 """{ "headline": "Always switch.", "cta": "en.wikipedia.org — Monty Hall problem" }"""),
+        ],
+    };
+
+    static ShowPlan DemoAssemblyLanguage() => new()
+    {
+        Title = "The Assembly Language of the Business",
+        Scenes =
+        [
+            Scene(
+                "title",
+                "Let's face it: nobody gets excited about intermediate languages. And yet they are among the most important ideas our industry ever had.",
+                """{ "kicker": "cratis screenplay", "headline": "The assembly language of the business", "emphasis": "assembly", "sub": "a story in animated infographics" }"""),
+
+            Scene(
+                "statement",
+                "Think about what I L actually did for dotnet. Every language compiles down to the same thing, and every tool that came after works on every language, for free.",
+                """{ "kicker": "the superpower", "headline": "One format in the middle. Every tool works.", "accent": "Every tool" }"""),
+
+            Scene(
+                "flow",
+                "A language above, a runtime below, and a small stable format between them. Dotnet has I L. The J V M has bytecode. And now the business has Screenplay.",
+                """
+                {
+                  "headline": "Every platform has its IL",
+                  "kicker": "the pattern",
+                  "nodes": [
+                    { "label": "Teams", "sub": "intent" },
+                    { "label": "AI", "sub": "drafts" },
+                    { "label": "Code", "sub": "details" },
+                    { "label": "Screenplay", "sub": "one format" },
+                    { "label": "Boards + apps", "sub": "every viewer" }
+                  ]
+                }
+                """),
+
+            Scene(
+                "code",
+                "A slice is written in seconds. A command with its validation, the event it produces and the read model it feeds, all in one honest indent.",
+                """
+                {
+                  "title": "library.play",
+                  "kicker": "a real slice",
+                  "language": "json",
+                  "highlight": [6],
+                  "code": "slice StateChange AddBook\n  command AddBook\n    bookId BookId identifier\n    isbn Isbn, title BookTitle\n    authorize IsLibrarian\n  produces BookAdded\n    for bookId\n  event BookAdded"
+                }
+                """),
+
+            Scene(
+                "compare",
+                "The business side never had that. We had whiteboards, sticky notes and documents that drifted the moment the meeting ended. Screenplay compiles, so it cannot drift.",
+                """
+                {
+                  "headline": "Documents versus a language",
+                  "left": { "title": "Design documents", "points": ["drift from the code", "stale after sprint one", "read by nobody"] },
+                  "right": { "title": "Screenplay", "points": ["compiles with diagnostics", "draws the board", "boots the sandbox"] },
+                  "verdict": "the model is the source of truth"
+                }
+                """),
+
+            Scene(
+                "steps",
+                "Getting started is one hour. Model it in Studio, scaffold with one command, compose up the containers, run the backend, open the frontend — and your first event is in the log.",
+                """
+                {
+                  "headline": "The first hour",
+                  "steps": [
+                    { "title": "Model it", "text": "Studio, event modeling" },
+                    { "title": "Scaffold", "text": "dotnet new cratis" },
+                    { "title": "Run it", "text": "compose up, dotnet run" },
+                    { "title": "First event", "text": "in the Workbench" }
+                  ]
+                }
+                """),
+
+            Scene(
+                "metric",
+                "Six commands from an empty folder to your first event. Six.",
+                """{ "value": 6, "format": "number", "label": "commands from empty folder to first event", "delta": "install · new · up · run · dev · open", "spark": [1, 2, 3, 3, 4, 5, 6] }"""),
+
+            Scene(
+                "image",
+                "And here is the part that sells it. Open a dot play file and the board just appears — every slice, every persona, every specification, drawn from the very file the rest of the system builds from.",
+                """
+                {
+                  "images": [
+                    {
+                      "src": "images/board.svg",
+                      "headline": "the board",
+                      "motion": "kenburns",
+                      "describe": "Slow Ken Burns drift across the event model board, settling on the AddBook slice"
+                    }
+                  ],
+                  "headline": "Open a .play file, get a board",
+                  "text": "the same file the tools compile, run and render"
+                }
+                """),
+
+            Scene(
+                "endcard",
+                "Write the model once. Get the boards, the apps and the truth. That is the assembly language of the business.",
+                """{ "headline": "One model. Every tool.", "cta": "cratis.io/screenplay" }"""),
+        ],
+    };
+
+    static ShowPlan DemoPictureThis() => new()
+    {
+        Title = "Picture This",
+        Scenes =
+        [
+            Scene(
+                "title",
+                "A screenshot is a fact. But a fact that just sits there is easy to scroll past. This one is about giving pictures intent.",
+                """{ "kicker": "cratis motion", "headline": "Picture This", "emphasis": "intent", "sub": "images that move with a reason" }"""),
+
+            Scene(
+                "image",
+                "Three pictures, three directions. The board drifts — a Ken Burns hold. The workbench zooms into the one line that matters. And the first hour slides in like a checklist being ticked.",
+                """
+                {
+                  "images": [
+                    { "src": "images/board.svg", "headline": "drift", "motion": "kenburns", "describe": "slow diagonal Ken Burns drift across the board" },
+                    { "src": "images/workbench.svg", "headline": "reveal", "motion": "zoom-in", "describe": "push in toward the highlighted event line" },
+                    { "src": "images/first-hour.svg", "headline": "arrive", "motion": "slide", "describe": "slide in from the right like a card" }
+                  ],
+                  "headline": "One picture, one direction"
+                }
+                """),
+
+            Scene(
+                "kinetic",
+                "A photograph is a fact. Motion is the emphasis you put on it. Hold the last beat, let it breathe, and the meaning lands.",
+                """{ "emphasis": ["fact", "emphasis", "breathe"], "pacing": { "hold": 0.6 } }"""),
+
+            Scene(
+                "quote",
+                "Pictures do not move by themselves. Someone chooses the drift, the zoom, the hold.",
+                """{ "text": "Pictures do not move by themselves. Someone chooses the drift, the zoom, the hold.", "attribution": "the Motion manual" }"""),
+
+            Scene(
+                "image",
+                "One image, one caption, one slow push. Nothing else. That is all a product shot needs.",
+                """
+                {
+                  "images": [
+                    {
+                      "src": "images/workbench.svg",
+                      "headline": "event 42 — Registered",
+                      "motion": "zoom-in",
+                      "describe": "slow zoom toward the highlighted event in the log"
+                    }
+                  ],
+                  "headline": "Zoom into what matters",
+                  "text": "the event that made the name appear"
+                }
+                """),
+
+            Scene(
+                "endcard",
+                "Show the picture. Then move it with intent.",
+                """{ "headline": "Show. Then move.", "cta": "cratis.io/motion" }"""),
         ],
     };
 

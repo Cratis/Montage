@@ -192,8 +192,8 @@ public class SynthesizeVoiceoverStep(
                     index = i + 1,
                     sceneId = $"scene-{i + 1}",
                     file = $"voiceover/scene-{i + 1:00}.wav",
-                    duration = Math.Round(takeDuration, 3),
-                    offset = Math.Round(offset, 3),
+                    duration = Math.Round(takeDuration, 3, MidpointRounding.AwayFromZero),
+                    offset = Math.Round(offset, 3, MidpointRounding.AwayFromZero),
                     spoken,
                 });
                 WavWriter.Append(take, target, ref format);
@@ -203,12 +203,14 @@ public class SynthesizeVoiceoverStep(
             WavWriter.Finalize(target, format!.Value);
         }
         var duration = Wav.ReadDuration(finalWav);
+        static System.Text.Json.JsonSerializerOptions ScenesJsonOptions() => new() { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower, WriteIndented = true };
 
         // the per-scene manifest the storyboard and the per-scene player consume
         ShowArtifactStore.WriteText(
             artifactStore.ScenesJson(showId),
-            System.Text.Json.JsonSerializer.Serialize(new { scenes = sceneDocs, duration = Math.Round(duration, 3) },
-                new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower, WriteIndented = true }));
+            System.Text.Json.JsonSerializer.Serialize(
+                new { scenes = sceneDocs, duration = Math.Round(duration, 3, MidpointRounding.AwayFromZero) },
+                ScenesJsonOptions()));
 
         // mp3 for playback and packaging; wav when ffmpeg is missing (engine and renderer handle both)
         var mp3 = artifactStore.VoiceoverAudio(showId);

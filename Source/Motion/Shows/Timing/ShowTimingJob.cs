@@ -125,7 +125,7 @@ public class TimeShowStep(
 
                 var takeWords = transcriber.IsEnabled && File.Exists(takePath)
                     ? await transcriber.TranscribeWithWordTimings(takePath, cancellationToken)
-                    : System.Array.Empty<TranscribedWord>();
+                    : [];
 
                 // line windows from the actual words of this take, moved into show time
                 var wordsInTake = takeWords.Count > 0 ? takeWords : FallbackWords(spoken, sceneOffset);
@@ -164,7 +164,7 @@ public class TimeShowStep(
 
             words = transcriber.IsEnabled
                 ? await transcriber.TranscribeWithWordTimings(wavPath, cancellationToken)
-                : System.Array.Empty<TranscribedWord>();
+                : [];
         }
 
         var lyricsJson = ShowTimingData.BuildLyricsJson(lines, words, audioDuration);
@@ -196,7 +196,7 @@ public class TimeShowStep(
     /// Estimated words for a scene when STT is unavailable - spread across the take so the
     /// offsets stay honest even without a transcription.
     /// </summary>
-    static IReadOnlyList<TranscribedWord> FallbackWords(string spoken, double sceneOffset)
+    static List<TranscribedWord> FallbackWords(string spoken, double sceneOffset)
     {
         var words = spoken.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var result = new List<TranscribedWord>();

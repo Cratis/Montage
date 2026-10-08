@@ -64,6 +64,20 @@ public sealed class ShowArtifactStore(IOptions<MotionOptions> options, IHostEnvi
     public string PackageZip(ShowId showId) => Path.Combine(FolderFor(showId), "package.zip");
 
     /// <summary>
+    /// Durable per-show assets (uploaded images and friends). The packager copies these into
+    /// every package it writes, so they survive a re-package; uploads also mirror into the
+    /// current package for instant preview.
+    /// </summary>
+    /// <param name="showId">The show.</param>
+    /// <returns>The assets folder, created.</returns>
+    public string AssetsFolderFor(ShowId showId)
+    {
+        var folder = Path.Combine(FolderFor(showId), "assets");
+        Directory.CreateDirectory(folder);
+        return folder;
+    }
+
+    /// <summary>
     /// Reads a text file if it exists.
     /// </summary>
     /// <param name="path">The path.</param>

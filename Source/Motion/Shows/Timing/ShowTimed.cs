@@ -9,6 +9,7 @@ namespace Motion.Shows.Timing;
 /// Occurs when the show has been timed: word-level lyrics and the audio envelope analysis are on disk.
 /// </summary>
 /// <param name="LyricsJson">Word-timed lyrics (lines, words, seconds).</param>
+/// <param name="Render">True when the timed show should go on to packaging and render.</param>
 [EventType]
 public record ShowTimed(string LyricsJson, bool Render = true);
 

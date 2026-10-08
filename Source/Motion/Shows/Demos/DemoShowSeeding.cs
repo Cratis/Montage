@@ -32,6 +32,7 @@ public sealed class DemoShowSeeding(ShowArtifactStore artifactStore) : ICanSeedE
     {
         foreach (var demo in DemoShows.All)
         {
+            DemoAssets.Write(artifactStore, ShowId.From(demo.Id));
             ShowArtifactStore.WriteText(artifactStore.PlanJson(ShowId.From(demo.Id)), ShowPlanner.Serialize(demo.Plan));
             builder.ForEventSource(
                 demo.Id,

@@ -23,7 +23,7 @@ public sealed partial class SceneTimingSavedReactor(ShowArtifactStore artifactSt
     /// <param name="context">The event context.</param>
     /// <returns>Awaitable task.</returns>
     [OnceOnly]
-    public Task On(SceneTimingSaved @event, EventContext context)
+    public async Task On(SceneTimingSaved @event, EventContext context)
     {
         var showId = ShowId.From(context.EventSourceId);
         var sceneId = $"scene-{@event.SceneNumber}";
@@ -32,7 +32,7 @@ public sealed partial class SceneTimingSavedReactor(ShowArtifactStore artifactSt
         if (raw is null)
         {
             LogNoLyrics(logger, showId, sceneId);
-            return Task.CompletedTask;
+            return;
         }
 
         var doc = JsonDocument.Parse(raw);
@@ -45,8 +45,8 @@ public sealed partial class SceneTimingSavedReactor(ShowArtifactStore artifactSt
                 var words = @event.Words.Select(w => (object)new Dictionary<string, object>
                 {
                     ["w"] = w.Word,
-                    ["start"] = Math.Round(w.Start, 3),
-                    ["end"] = Math.Round(w.End, 3),
+                    ["start"] = Math.Round(w.Start, 3, MidpointRounding.AwayFromZero),
+                    ["end"] = Math.Round(w.End, 3, MidpointRounding.AwayFromZero),
                 }).ToList();
                 rebuilt.Add(new Dictionary<string, object?>
                 {
@@ -66,14 +66,13 @@ public sealed partial class SceneTimingSavedReactor(ShowArtifactStore artifactSt
         }
 
         var output = JsonSerializer.Serialize(new { lines = rebuilt }, _json);
-        File.WriteAllText(path, output);
+        await File.WriteAllTextAsync(path, output);
 
         // the packaged copy is what the editor's preview loads - keep them identical
         var packaged = Path.Combine(artifactStore.PackageDirectory(showId), "data", "lyrics.json");
-        if (File.Exists(packaged)) File.WriteAllText(packaged, output);
+        if (File.Exists(packaged)) await File.WriteAllTextAsync(packaged, output);
 
         LogSaved(logger, showId, sceneId, @event.Words.Count);
-        return Task.CompletedTask;
     }
 
     [LoggerMessage(0, LogLevel.Information, "Hand-adjusted {Count} words for {Scene} of show {Show}")]

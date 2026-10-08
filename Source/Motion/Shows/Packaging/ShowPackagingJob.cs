@@ -62,7 +62,7 @@ public class ShowPackagingJob : Job<ShowPackagingRequest, JobState>, IShowPackag
 /// <param name="logger">The logger.</param>
 /// <param name="scopeFactory">The scope services are resolved from - a step runs outside any request.</param>
 /// <param name="chronicleClient">The <see cref="IChronicleClient"/> the package is appended through.</param>
-public class PackageShowStep(
+public partial class PackageShowStep(
     [PersistentState(nameof(PackageShowStepState), WellKnownGrainStorageProviders.JobSteps)] IPersistentState<PackageShowStepState> state,
     IJobStepThrottle throttle,
     ILogger<PackageShowStep> logger,
@@ -93,7 +93,7 @@ public class PackageShowStep(
         var packager = services.GetRequiredService<IShowPackager>();
         var artifactStore = services.GetRequiredService<ShowArtifactStore>();
         var stills = services.GetRequiredService<Motion.Shows.Rendering.IEngineStills>();
-        var logger = services.GetRequiredService<ILogger<PackageShowStep>>();
+        var stillsLogger = services.GetRequiredService<ILogger<PackageShowStep>>();
 
         if (ShowArtifactStore.ReadTextOrNull(artifactStore.LyricsJson(showId)) is null)
         {
@@ -126,12 +126,12 @@ public class PackageShowStep(
         // capture leaves the editor on placeholders, it never fails the show)
         try
         {
-            var times = windows.Select(w => Math.Round((w.Start + w.End) / 2, 2)).ToList();
+            var times = windows.Select(w => Math.Round((w.Start + w.End) / 2, 2, MidpointRounding.AwayFromZero)).ToList();
             await stills.CapturePerScene(packageDirectory, times, artifactStore.SnapshotsFolderFor(showId), cancellationToken);
         }
         catch (Exception snapshotEx)
         {
-            logger.LogWarning(snapshotEx, "Scene stills failed for {ShowId} - the storyboard falls back to placeholders", showId.Value);
+            LogStillsFailed(stillsLogger, snapshotEx, showId.Value);
         }
 
         await JobStepAppender.Append(this, chronicleClient, showId.Value, new ShowPackaged(packageDirectory, packageZip, currentState.Render));
@@ -147,4 +147,7 @@ public class PackageShowStep(
     /// <inheritdoc/>
     protected override ValueTask<object?> CreateCancelledResultFromCurrentState(PackageShowStepState currentState) =>
         ValueTask.FromResult<object?>(null);
+
+    [LoggerMessage(0, LogLevel.Warning, "Scene stills failed for {ShowId} - the storyboard falls back to placeholders")]
+    static partial void LogStillsFailed(ILogger logger, Exception exception, Guid showId);
 }
