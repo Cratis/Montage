@@ -1,0 +1,132 @@
+name: Build
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  NODE_VERSION: "24.x"
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "Source/**"
+      - "Docker/**"
+      - "Directory.Build.props"
+      - "Directory.Packages.props"
+      - "global.json"
+      - ".github/workflows/build.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "Source/**"
+      - "Docker/**"
+      - "Directory.Build.props"
+      - "Directory.Packages.props"
+      - "global.json"
+      - ".github/workflows/build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    name: Engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install
+        working-directory: Source/Engine
+        run: npm ci
+
+      - name: Type check and build
+        working-directory: Source/Engine
+        run: npm run build
+
+      # Uploaded so the backend job serves the same preview the engine job just verified.
+      - name: Upload preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-preview
+          path: Source/Engine/dist/preview
+          retention-days: 1
+
+  editor:
+    name: Editor
+    needs: [engine]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download engine preview
+        uses: actions/download-artifact@v4
+        with:
+          name: engine-preview
+          path: Source/Engine/dist/preview
+
+      - name: Install frontend dependencies
+        working-directory: Source/Montage/.frontend
+        run: npm install
+
+      - name: Type check frontend
+        working-directory: Source/Montage
+        run: npm run compile
+
+      - name: Build frontend
+        working-directory: Source/Montage
+        run: npm run build
+
+      # The generated proxies are checked in, so the proxy generator stays off.
+      - name: Build (Release - zero warnings)
+        run: dotnet build Source/Montage/Montage.csproj --configuration Release -p:CratisProxiesOutputPath=
+
+      - name: Build (Debug)
+        run: dotnet build Source/Montage/Montage.csproj --configuration Debug -p:CratisProxiesOutputPath=
+
+  # The image is what actually ships, and nothing else verifies it until Publish tries to push one.
+  # Build it here (native architecture, no push; Publish does the multi-arch build) so a broken
+  # image fails on the pull request instead.
+  docker-build:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Docker/Dockerfile
+          push: false
+          build-args: |
+            VERSION=0.0.0-ci

@@ -1,0 +1,16 @@
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/out/
+**/workspace/
+Source/Montage/wwwroot/
+.git/
+.github/
+.ai-work/
+.cratis/
+.claude/
+.pi/
+.vscode/
+*.mp4
+**/appsettings.local.json
