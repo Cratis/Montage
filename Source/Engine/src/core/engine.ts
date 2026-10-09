@@ -16,7 +16,7 @@ import { clamp, hash, rng, ease } from './util';
 
 interface Loaded { entry: TimelineEntry; scene: Scene | null; error?: string }
 
-export class MotionEngine {
+export class MontageEngine {
   readonly W: number;
   readonly H: number;
   readonly fps: number;

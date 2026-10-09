@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+    <PropertyGroup>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <OutputType>Exe</OutputType>
+        <CratisProxiesOutputPath>$(MSBuildThisFileDirectory).frontend/Api</CratisProxiesOutputPath>
+        <CratisProxiesSegmentsToSkip>1</CratisProxiesSegmentsToSkip>
+        <CratisProxiesSkipOutputDeletion>true</CratisProxiesSkipOutputDeletion>
+        <CratisProxiesSkipCommandNameInRoute>false</CratisProxiesSkipCommandNameInRoute>
+        <AssemblyName>Montage</AssemblyName>
+        <RootNamespace>Montage</RootNamespace>
+        <InvariantGlobalization>true</InvariantGlobalization>
+        <NoWarn>$(NoWarn);CS1591;CS7022</NoWarn>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Cratis" />
+<PackageReference Include="Cratis.AI" />
+        <PackageReference Include="Cratis.Orleans" />
+        <PackageReference Include="Cratis.Orleans.Chronicle" />
+        <PackageReference Include="Cratis.Orleans.Storage.MongoDB" />
+        <PackageReference Include="Microsoft.Orleans.Reminders" />
+        <PackageReference Include="Microsoft.Orleans.Server" />
+        <PackageReference Include="Microsoft.Orleans.Serialization.SystemTextJson" />
+        <PackageReference Include="Orleans.Providers.MongoDB" />
+        <PackageReference Include="Cratis.Arc.MongoDB" />
+        <PackageReference Include="Cratis.Arc.Swagger" />
+        <PackageReference Include="Cratis.Arc.ProxyGenerator.Build" />
+        <!-- Direct reference so the central Cratis.Chronicle pin actually applies: without it the
+             client resolves transitively through Cratis and central package management does not pin
+             transitives, which would quietly hold the client at whatever Cratis referenced. -->
+        <PackageReference Include="Cratis.Chronicle" />
+    </ItemGroup>
+
+    <!--
+        The engine's preview player is a static Vite build (Source/Engine/dist/preview). Serving it
+        from the editor keeps preview and rendered output on the same origin; the Aspire dashboard
+        links straight into a scene-accurate preview of any packaged show.
+    -->
+    <Target Name="CopyEnginePreview" AfterTargets="Build" Condition="Exists('../Engine/dist/preview/index.html')">
+        <ItemGroup>
+            <EnginePreviewFiles Include="../Engine/dist/preview/**/*" />
+        </ItemGroup>
+        <Message Importance="high" Text="Copying montage-engine preview into wwwroot/preview" />
+        <RemoveDir Directories="$(MSBuildThisFileDirectory)wwwroot/preview" />
+        <Copy
+            SourceFiles="@(EnginePreviewFiles)"
+            DestinationFiles="@(EnginePreviewFiles->'$(MSBuildThisFileDirectory)wwwroot/preview/%(RecursiveDir)%(Filename)%(Extension)')"
+            SkipUnchangedFiles="true" />
+    </Target>
+</Project>

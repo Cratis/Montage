@@ -1,6 +1,6 @@
-// motion-engine — public surface.
+// montage-engine — public surface.
 
-export { MotionEngine } from './core/engine';
+export { MontageEngine } from './core/engine';
 export { Player } from './player';
 export { normalizeSpec, type ShowSpec, type SceneSpec, type BrandSpec, type TransitionKind } from './spec';
 export { registry } from './core/registry';

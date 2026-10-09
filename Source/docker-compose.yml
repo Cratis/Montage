@@ -3,12 +3,12 @@
 #   dotnet run --project Source/Composition
 #
 #   docker compose up -d        (from this folder)
-#   cd Motion && dotnet run     (the editor, http://localhost:5000)
+#   cd Montage && dotnet run     (the editor, http://localhost:5000)
 
 services:
     mongodb:
         image: mongo:7
-        container_name: motion-mongodb
+        container_name: montage-mongodb
         # Chronicle needs transactions and change streams, which a standalone mongod
         # does not support - hence the single-node replica set, self-initiating.
         command: ["--replSet", "rs0", "--bind_ip_all"]
@@ -22,7 +22,7 @@ services:
 
     mongo-init:
         image: mongo:7
-        container_name: motion-mongo-init
+        container_name: montage-mongo-init
         depends_on:
             mongodb:
                 condition: service_healthy
@@ -33,7 +33,7 @@ services:
 
     chronicle:
         image: cratis/chronicle:19.33.3-development-slim
-        container_name: motion-chronicle
+        container_name: montage-chronicle
         # Must match the Cratis.Chronicle client package version in Directory.Packages.props.
         depends_on:
             mongo-init:
@@ -50,7 +50,7 @@ services:
     tts:
         # Kokoro-FastAPI - OpenAI-compatible /v1/audio/speech, model baked into the image.
         image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.9.0
-        container_name: motion-tts
+        container_name: montage-tts
         ports:
             - "8880:8880"
 
@@ -58,13 +58,13 @@ services:
         # Speaches - OpenAI-compatible /v1/audio/transcriptions on faster-whisper.
         # The model is pulled on first use and cached in the named volume.
         image: ghcr.io/speaches-ai/speaches:0.9.0-rc.3-cpu
-        container_name: motion-stt
+        container_name: montage-stt
         ports:
             - "8770:8000"
         environment:
             WHISPER__MODEL: "Systran/faster-whisper-tiny.en"
         volumes:
-            - motion-hf-cache:/home/ubuntu/.cache/huggingface/hub
+            - montage-hf-cache:/home/ubuntu/.cache/huggingface/hub
 
 volumes:
-    motion-hf-cache:
+    montage-hf-cache:

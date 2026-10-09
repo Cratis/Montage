@@ -72,10 +72,10 @@ async function openPage(baseUrl: string, extraQuery = '') {
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') logs.push(`[${m.type()}] ${m.text()}`); });
   page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
   await page.goto(`${baseUrl}/?export=1${extraQuery}`);
-  await page.waitForFunction(() => (window as any).__motion?.ready || (window as any).__motion?.error, null, { timeout: 120000 });
-  const err: string | null = await page.evaluate(() => (window as any).__motion.error);
+  await page.waitForFunction(() => (window as any).__montage?.ready || (window as any).__montage?.error, null, { timeout: 120000 });
+  const err: string | null = await page.evaluate(() => (window as any).__montage.error);
   if (err) throw new Error(`app failed to boot:\n${err}\n${logs.join('\n')}`);
-  const sceneErrors: string[] = await page.evaluate(() => (window as any).__motion.errors());
+  const sceneErrors: string[] = await page.evaluate(() => (window as any).__montage.errors());
   if (sceneErrors.length) { await browser.close(); throw new Error('SCENE ERRORS:\n' + sceneErrors.join('\n')); }
   return { browser, page, logs };
 }
@@ -84,7 +84,7 @@ async function stills(page: any, times: number[], outDir: string) {
   mkdirSync(outDir, { recursive: true });
   const files: string[] = [];
   for (const t of times) {
-    const data: string = await page.evaluate((t: number) => (window as any).__motion.still(t), t);
+    const data: string = await page.evaluate((t: number) => (window as any).__montage.still(t), t);
     const f = join(outDir, `f_${t.toFixed(2).padStart(7, '0')}.png`);
     const { writeFileSync } = await import('node:fs');
     writeFileSync(f, Buffer.from(data.split(',')[1]!, 'base64'));
@@ -96,7 +96,7 @@ async function stills(page: any, times: number[], outDir: string) {
 
 async function sheet(page: any, times: number[], cols: number, out: string) {
   const dataUrl: string = await page.evaluate(async ({ times, cols }: { times: number[]; cols: number }) => {
-    const M = (window as any).__motion;
+    const M = (window as any).__montage;
     const cw = 480, ch = 270, pad = 4, lab = 18;
     const rows = Math.ceil(times.length / cols);
     const cv = document.createElement('canvas');
@@ -121,8 +121,8 @@ async function sheet(page: any, times: number[], cols: number, out: string) {
 
 async function video(page: any, pkgBase: string, from: number, to: number, fps: number, out: string) {
   mkdirSync(dirname(out), { recursive: true });
-  const W: number = await page.evaluate(() => (window as any).__motion.width);
-  const H: number = await page.evaluate(() => (window as any).__motion.height);
+  const W: number = await page.evaluate(() => (window as any).__montage.width);
+  const H: number = await page.evaluate(() => (window as any).__montage.height);
   const crf = opt('crf', '17')!;
   const audioPath = !flag('noaudio') ? join(pkgBase, 'audio/voiceover.mp3') : null;
   const hasAudio = audioPath ? existsSync(audioPath) : false;
@@ -189,7 +189,7 @@ async function video(page: any, pkgBase: string, from: number, to: number, fps: 
     // The browser can get stuck while delivering a large frame or a socket close.
     // Observe encoder exit independently instead of relying on a browser callback.
     await Promise.race([
-      page.evaluate(({ from, to, fps, ws }: any) => (window as any).__motion.stream({ from, to, fps, ws }), {
+      page.evaluate(({ from, to, fps, ws }: any) => (window as any).__montage.stream({ from, to, fps, ws }), {
         from, to, fps, ws: `ws://127.0.0.1:${wsPort}`,
       }),
       encoderStopped,
@@ -233,14 +233,14 @@ try {
       const times = Array.from({ length: n }, (_, i) => from + ((to - from) * i) / Math.max(1, n - 1));
       await sheet(page, times, +opt('cols', '4')!, resolve(opt('out', `out/sheets/sheet_${from}-${to}.png`)!));
     } else if (mode === 'video') {
-      const dur: number = await page.evaluate(() => (window as any).__motion.duration());
+      const dur: number = await page.evaluate(() => (window as any).__montage.duration());
       await video(page, pkgDir ?? pkgOpt, +opt('from', '0')!, +opt('to', String(dur))!, +opt('fps', '60')!, resolve(opt('out', 'out/show.mp4')!));
     } else if (mode === 'info') {
       const info = await page.evaluate(() => ({
-        duration: (window as any).__motion.duration(),
-        width: (window as any).__motion.width,
-        height: (window as any).__motion.height,
-        timeline: (window as any).__motion.timeline(),
+        duration: (window as any).__montage.duration(),
+        width: (window as any).__montage.width,
+        height: (window as any).__montage.height,
+        timeline: (window as any).__montage.timeline(),
       }));
       console.log(JSON.stringify(info, null, 2));
     } else {

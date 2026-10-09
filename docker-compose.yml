@@ -1,13 +1,13 @@
 services:
   mongo:
     image: mongo:7
-    container_name: motion-mongodb
+    container_name: montage-mongodb
     # Chronicle and the MongoDB change streams the editor's read models use both need a replica set
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     ports:
       - "27017:27017"
     volumes:
-      - motion-mongodb-data:/data/db
+      - montage-mongodb-data:/data/db
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 5s
@@ -26,7 +26,7 @@ services:
 
   chronicle:
     image: cratis/chronicle:latest-development-slim
-    container_name: motion-chronicle
+    container_name: montage-chronicle
     ports:
       - "35000:35000"
     environment:
@@ -37,4 +37,4 @@ services:
         condition: service_completed_successfully
 
 volumes:
-  motion-mongodb-data:
+  montage-mongodb-data:

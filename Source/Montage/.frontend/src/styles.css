@@ -1,0 +1,94 @@
+/* Cratis Montage editor — the look: near-black ground, warm off-white ink, violet accent,
+   hairline rules, mono technical labels, a dot-grid canvas with one soft glow. */
+
+@import 'tailwindcss';
+@import 'primeicons/primeicons.css';
+@import '@cratis/components/tokens';
+@import '@cratis/components/styles';
+@import '@cratis/components/renderer/builtin/styles';
+@import '@cratis/components/theme';
+
+:root, body.cratis-theme {
+    --cr-montage-bg: #0b0d12;
+    --cr-montage-bg-2: #0e1119;
+    --cr-montage-surface: #141824;
+    --cr-montage-surface-2: #1a2030;
+    --cr-montage-rule: rgba(255, 255, 255, 0.10);
+    --cr-montage-ink: #f0eee6;
+    --cr-montage-dim: #9aa1b0;
+    --cr-montage-faint: #5c6272;
+    --cr-montage-violet: #8c7cf6;
+    --cr-montage-amber: #f2a340;
+}
+
+body {
+    background: var(--cr-montage-bg);
+    color: var(--cr-montage-ink);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-synthesis: none;
+}
+
+/* the ambient canvas: dot grid + one soft violet glow, echoing Studio */
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+    background-size: 28px 28px;
+    background-position: -6px -6px;
+    pointer-events: none;
+    z-index: 0;
+}
+body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(140, 124, 246, 0.09), transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+#root { position: relative; z-index: 1; }
+
+.mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.display { font-family: 'Space Grotesk', 'Inter', sans-serif; letter-spacing: -0.02em; }
+
+.hairline { border-color: var(--cr-montage-rule); }
+
+.panel {
+    background: linear-gradient(135deg, var(--cr-montage-surface), var(--cr-montage-bg-2));
+    border: 1px solid var(--cr-montage-rule);
+    border-radius: 16px;
+}
+
+.panel-accent { border-top: 2px solid var(--cr-montage-violet); }
+
+.eyebrow {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--cr-montage-violet);
+}
+
+/* status dots for the pipeline */
+.stage-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    border: 1px solid var(--cr-montage-rule);
+    background: var(--cr-montage-surface-2);
+}
+.stage-dot.done { background: var(--cr-montage-violet); border-color: var(--cr-montage-violet); }
+.stage-dot.active {
+    background: var(--cr-montage-amber);
+    border-color: var(--cr-montage-amber);
+    box-shadow: 0 0 0 3px rgba(242, 163, 64, 0.18);
+}
+.stage-dot.failed { background: #e5484d; border-color: #e5484d; }
+
+@keyframes pulse-soft { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+.pulsing { animation: pulse-soft 1.4s ease-in-out infinite; }
+
+/* PrimeReact popups & dialogs need the dark ground behind them */
+.p-component { font-family: 'Inter', system-ui, sans-serif; }

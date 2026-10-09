@@ -1,10 +1,10 @@
 // Preview host: loads a show package (show.json + audio + data), boots the engine and
-// the player. Also exposes the window.__motion bridge the offline renderer drives.
+// the player. Also exposes the window.__montage bridge the offline renderer drives.
 //
 // The package location comes from ?pkg= — either a URL (absolute or relative to this
 // page) or nothing, meaning 'package/' next to the page.
 
-import { MotionEngine, Player, normalizeSpec } from '../src/index';
+import { MontageEngine, Player, normalizeSpec } from '../src/index';
 import { diagramSvg, type DiagramSpec } from '../src/scenes/diagram';
 
 const params = new URLSearchParams(location.search);
@@ -17,7 +17,7 @@ const canvas = document.getElementById('c') as HTMLCanvasElement;
 const errorBox = document.getElementById('error')!;
 
 function fail(msg: string) {
-  (window as any).__motion = { ready: false, error: msg };
+  (window as any).__montage = { ready: false, error: msg };
   errorBox.textContent = msg;
   errorBox.style.display = 'grid';
   console.error(msg);
@@ -37,7 +37,7 @@ async function boot() {
   fit();
   window.addEventListener('resize', fit);
 
-  const engine = new MotionEngine(canvas, spec, pkg);
+  const engine = new MontageEngine(canvas, spec, pkg);
   await engine.init();
   if (engine.errors.length) console.warn('scene errors:', engine.errors);
 
@@ -95,7 +95,7 @@ async function boot() {
         ws.onclose = () => { if (!resolved) { resolved = true; reject(new Error(`Frame stream closed early: ${acked}/${total} acknowledged`)); } };
       }),
   };
-  (window as any).__motion = api;
+  (window as any).__montage = api;
 
   const sceneParam = params.get('scene');
   if (sceneParam) {
@@ -109,15 +109,15 @@ async function boot() {
   // to an absolute show time so the timing editor's playhead and the visuals stay in lock;
   // the preview reports its position back so the host's scrubber mirrors the player's
   window.addEventListener('message', (e) => {
-    if (e.data === 'motion:pause') player.pause();
-    else if (e.data && typeof e.data === 'object' && e.data.motion === 'seek') {
+    if (e.data === 'montage:pause') player.pause();
+    else if (e.data && typeof e.data === 'object' && e.data.montage === 'seek') {
       player.pause();
       const t = Number(e.data.t);
       if (!Number.isNaN(t)) player.seek(Math.max(0, Math.min(engine.duration, t)));
     }
   });
   setInterval(() => {
-    window.parent?.postMessage({ motion: 'position', t: player.current, playing: player.isPlaying }, '*');
+    window.parent?.postMessage({ montage: 'position', t: player.current, playing: player.isPlaying }, '*');
   }, 100);
 
   // opened from the editor's package panel: keep a visible way back to the show

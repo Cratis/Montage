@@ -1,5 +1,5 @@
 {
-  "name": "motion-engine",
+  "name": "montage-engine",
   "version": "0.1.0",
   "description": "Deterministic motion-graphics render engine. Scenes are pure functions of time; the browser preview and the exported MP4 are identical.",
   "type": "module",

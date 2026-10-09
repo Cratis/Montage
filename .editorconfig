@@ -12,7 +12,7 @@ indent_size = 2
 [*.{cs,vb}]
 dotnet_analyzer_diagnostic.severity = warning
 
-### Motion — deliberate severities ####
+### Montage — deliberate severities ####
 # Member ordering (SA1201/1202/1204) is not a convention here; the corpus style guide allows
 # any member order and the pipeline reactors read clearest with fields last. Doc-comment
 # completeness (RCS1140/1141, CS1573) is enforced only where a comment block already exists -

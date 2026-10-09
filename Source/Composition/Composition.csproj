@@ -21,6 +21,6 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="../Motion/Motion.csproj" />
+        <ProjectReference Include="../Montage/Montage.csproj" />
     </ItemGroup>
 </Project>

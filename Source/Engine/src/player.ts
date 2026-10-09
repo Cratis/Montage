@@ -1,7 +1,7 @@
 // Preview player: playback, scrubbing, keyboard control, a quiet HUD. The same engine
 // calls the renderer uses — the preview is the export, just live.
 
-import type { MotionEngine } from './core/engine';
+import type { MontageEngine } from './core/engine';
 
 export class Player {
   private audio: HTMLAudioElement | null = null;
@@ -13,7 +13,7 @@ export class Player {
   private hudHidden = false;
   private plateRange: { id: string; start: number; end: number } | null = null;
 
-  constructor(private engine: MotionEngine, private canvas: HTMLCanvasElement, private ui: HTMLElement) {
+  constructor(private engine: MontageEngine, private canvas: HTMLCanvasElement, private ui: HTMLElement) {
     window.addEventListener('keydown', (e) => this.key(e));
     this.buildUi();
     this.tick = this.tick.bind(this);

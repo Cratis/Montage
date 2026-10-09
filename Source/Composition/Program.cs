@@ -5,7 +5,7 @@ var builder = DistributedApplication.CreateBuilder(args);
 
 // MongoDB the way Chronicle needs it - a self-initiating single-node replica set exposed through a
 // connection string with directConnection=true. Chronicle relies on transactions and change streams,
-// which a standalone mongod does not support. The same instance backs Motion's Arc read models.
+// which a standalone mongod does not support. The same instance backs Montage's Arc read models.
 // Pinned to MongoDB 7: MongoDB 8 refuses to start on Linux kernel 6.19 and newer, which current
 // Docker Desktop VMs run, and Chronicle then crashes on its missing store.
 var mongodb = builder.AddCratisChronicleMongoDB(imageTag: "7.0");
@@ -21,7 +21,7 @@ builder.CreateResourceBuilder(mongodbServer).WithEndpoint("tcp", endpoint => end
 // A named volume so the event store, read models and configured providers survive an AppHost
 // restart - an anonymous volume dies with the container, and every restart then wiped every
 // provider and show the user had. The seeder is idempotent, so a populated store is safe.
-builder.CreateResourceBuilder(mongodbServer).WithVolume("motion-mongodb-data", "/data/db");
+builder.CreateResourceBuilder(mongodbServer).WithVolume("montage-mongodb-data", "/data/db");
 
 // Chronicle - the slim development image against the MongoDB above, pinned to the same version the
 // Cratis.Chronicle client package is pinned to in Directory.Packages.props. The two are a lockstep
@@ -51,7 +51,7 @@ var chronicleReady = builder
 // Speech services the pipeline is built around: Kokoro-FastAPI speaks the voiceover
 // (OpenAI-compatible /v1/audio/speech, model baked into the image) and Speaches aligns it
 // word by word (OpenAI-compatible /v1/audio/transcriptions on faster-whisper). Fixed host
-// ports so the Cratis:Motion defaults in appsettings.json work without configuration; the
+// ports so the Cratis:Montage defaults in appsettings.json work without configuration; the
 // transcriber downloads its model on first use, cached in a volume the compose file shares.
 var tts = builder
     .AddContainer("tts", "ghcr.io/remsky/kokoro-fastapi-cpu", "v0.9.0")
@@ -81,26 +81,26 @@ var stt = builder
         endpoint.TargetPort = 8000;
     })
     .WithEnvironment("WHISPER__MODEL", "Systran/faster-whisper-tiny.en")
-    .WithVolume("motion-hf-cache", "/home/ubuntu/.cache/huggingface/hub");
+    .WithVolume("montage-hf-cache", "/home/ubuntu/.cache/huggingface/hub");
 
 // The editor frontend - Vite dev server over the .frontend folder inside the editor project, same
 // layout as Direct's. Fixed host port so proxy configuration in vite.config.ts keeps resolving /api.
 var frontend = builder
-    .AddViteApp("motion-frontend", "../Motion")
+    .AddViteApp("montage-frontend", "../Montage")
     .WithEndpoint("http", endpoint => endpoint.Port = 9000)
     .WithViteConfig(".frontend/vite.config.ts");
 
 // The editor backend. TTS, STT and the language model default to the mock services documented in
 // the README; point them at real services with appsettings.local.json or user secrets - the app
-// reads them through the same Cratis:Motion options it always has.
+// reads them through the same Cratis:Montage options it always has.
 builder
-    .AddProject<Projects.Motion>("motion")
+    .AddProject<Projects.Montage>("montage")
     .WithEndpoint("http", endpoint => endpoint.Port = 5000)
     .WithEnvironment("Cratis__Chronicle__ConnectionString", "chronicle://localhost:35000")
     .WithEnvironment("Cratis__MongoDB__Server", mongodb.Resource.ConnectionStringExpression)
 
     // the speech containers get dynamic host ports, so hand the editor their allocated
-    // endpoints (services__*__http__0) - Motion prefers them over the configured defaults
+    // endpoints (services__*__http__0) - Montage prefers them over the configured defaults
     .WithEnvironment(context =>
     {
         context.EnvironmentVariables["services__tts__http__0"] = tts.GetEndpoint("http");

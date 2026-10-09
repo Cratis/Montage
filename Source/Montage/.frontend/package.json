@@ -1,0 +1,37 @@
+{
+  "name": "montage-editor",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 9000",
+    "build": "vite build",
+    "compile": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@cratis/arc": "22.51.0",
+    "@cratis/arc.react": "22.51.0",
+    "@cratis/components": "4.26.1",
+    "@cratis/fundamentals": "7.22.8",
+    "primeicons": "8.0.0",
+    "primereact": "11.2.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "react-icons": "5.5.0",
+    "react-router-dom": "7.9.0",
+    "reflect-metadata": "0.2.2",
+    "@cratis/ai": "7.14.1"
+  },
+  "devDependencies": {
+    "@cratis/arc.vite": "22.51.0",
+    "@tailwindcss/vite": "4.3.1",
+    "@types/node": "^26.6.4",
+    "@types/react": "19.2.0",
+    "@types/react-dom": "19.2.0",
+    "@vitejs/plugin-react": "6.0.3",
+    "tailwindcss": "4.3.1",
+    "typescript": "6.0.3",
+    "vite": "8.1.0"
+  }
+}

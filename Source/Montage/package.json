@@ -1,0 +1,9 @@
+{
+    "name": "montage-app",
+    "private": true,
+    "scripts": {
+        "dev": "node .frontend/node_modules/vite/bin/vite.js --config .frontend/vite.config.ts",
+        "build": "node .frontend/node_modules/vite/bin/vite.js build --config .frontend/vite.config.ts",
+        "compile": "node .frontend/node_modules/typescript/bin/tsc --project .frontend/tsconfig.json --noEmit"
+    }
+}

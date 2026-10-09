@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// A tiny local mock of the three self-hosted services Motion talks to, for wiring tests:
+// A tiny local mock of the three self-hosted services Montage talks to, for wiring tests:
 //   POST /v1/chat/completions      -> a canned show plan (OpenAI-compatible)
 //   POST /v1/audio/speech          -> a synthesized WAV: a soft tone per word (OpenAI-compatible)
 //   POST /v1/audio/transcriptions  -> verbose_json with evenly spread word timings (OpenAI-compatible)

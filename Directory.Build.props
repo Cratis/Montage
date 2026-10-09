@@ -7,7 +7,7 @@
 
         <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
 
-        <!-- Motion does not host Arc's embedded event model. -->
+        <!-- Montage does not host Arc's embedded event model. -->
         <CratisEmbeddedScreenplayEnabled>false</CratisEmbeddedScreenplayEnabled>
 
         <RunAnalyzersDuringBuild>True</RunAnalyzersDuringBuild>

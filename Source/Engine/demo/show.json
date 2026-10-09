@@ -7,7 +7,7 @@
   "fps": 60,
   "voiceover": null,
   "duration": 37.0,
-  "brand": { "name": "Cratis", "product": "Motion" },
+  "brand": { "name": "Cratis", "product": "Montage" },
   "scenes": [
     {
       "id": "open",
@@ -75,7 +75,7 @@
       "type": "endcard",
       "start": 32.5, "end": 37.0,
       "transitionIn": "crossfade",
-      "params": { "headline": "Make motion like this", "cta": "cratis.io", "brandName": "Cratis", "product": "Motion" }
+      "params": { "headline": "Make motion like this", "cta": "cratis.io", "brandName": "Cratis", "product": "Montage" }
     }
   ]
 }
