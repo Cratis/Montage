@@ -65,7 +65,7 @@ Model replies are structured data, not arbitrary executable code. Bounds, IDs an
 
 ### Verification / live blockers
 
-Release builds with zero warnings/errors; frontend type-check/build and browser motion regressions pass. A real three-second export has exactly 180 frames at 60 fps; decode found 180 distinct frame hashes. An intentionally invalid encoder preset fails promptly instead of leaving a hanging renderer. Assembly contact sheets demonstrate actual partial outlines, staged row builds and final hub/fan-out layouts.
+Release builds with zero warnings/errors; frontend type-check/build and browser motion regressions pass. A real three-second export has exactly 180 frames at 60 fps; decode found 180 distinct frame hashes. An intentionally invalid encoder preset fails explicitly instead of leaving a hanging renderer. Full-resolution export exposed another failure path: encoder exit could leave the browser waiting for a socket callback. Streaming now observes encoder exit independently, retains stderr diagnostics, limits in-flight frames to two and rejects 60 seconds without acknowledged progress. A real full-HD Assembly segment also exports exactly 60 frames for one second. Assembly contact sheets demonstrate actual partial outlines, staged row builds and final hub/fan-out layouts.
 
 The live reference-guided AI request reached the selected configured Claude provider, but the provider returned `invalid x-api-key`. The endpoint reports that failure without changing the slide. A successful live generation is **not yet verified**; credentials need correction in Settings. Template storage and manual SVG choreography do not require that provider to work.
 

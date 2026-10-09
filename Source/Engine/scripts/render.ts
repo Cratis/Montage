@@ -136,7 +136,12 @@ async function video(page: any, pkgBase: string, from: number, to: number, fps: 
   if (hasAudio) args.push('-c:a', 'aac', '-b:a', '256k', '-shortest');
   args.push('-movflags', '+faststart', out);
 
-  const ff = spawn(args[0]!, args.slice(1), { stdio: ['pipe', 'inherit', 'inherit'] });
+  const ff = spawn(args[0]!, args.slice(1), { stdio: ['pipe', 'inherit', 'pipe'] });
+  let encoderErrors = '';
+  ff.stderr!.on('data', (chunk: Buffer) => {
+    encoderErrors = (encoderErrors + chunk.toString()).slice(-4096);
+    process.stderr.write(chunk);
+  });
   const encoded = once(ff, 'close');
   let frames = 0;
   const total = Math.round(to * fps) - Math.round(from * fps);
@@ -165,16 +170,38 @@ async function video(page: any, pkgBase: string, from: number, to: number, fps: 
     });
   });
 
+  let lastProgress = performance.now();
+  let lastFrames = frames;
+  let watchdog: ReturnType<typeof setInterval> | undefined;
+  const stalled = new Promise<never>((_, reject) => {
+    watchdog = setInterval(() => {
+      if (frames !== lastFrames) { lastFrames = frames; lastProgress = performance.now(); }
+      else if (performance.now() - lastProgress > 60000) reject(new Error(`Render stalled: no encoder acknowledgement for 60 seconds (${frames}/${total} frames)`));
+    }, 5000);
+  });
+  const encoderStopped = encoded.then(([code, signal]) => {
+    if (code !== 0 || frames < total) {
+      throw new Error(`Encoder exited before the frame stream completed: code=${code}, signal=${signal}, frames=${frames}/${total}\n${encoderErrors}`);
+    }
+    return new Promise<never>(() => {});
+  });
   try {
-    await page.evaluate(({ from, to, fps, ws }: any) => (window as any).__motion.stream({ from, to, fps, ws }), {
-      from, to, fps, ws: `ws://127.0.0.1:${wsPort}`,
-    });
+    // The browser can get stuck while delivering a large frame or a socket close.
+    // Observe encoder exit independently instead of relying on a browser callback.
+    await Promise.race([
+      page.evaluate(({ from, to, fps, ws }: any) => (window as any).__motion.stream({ from, to, fps, ws }), {
+        from, to, fps, ws: `ws://127.0.0.1:${wsPort}`,
+      }),
+      encoderStopped,
+      stalled,
+    ]);
     if (frames !== total) throw new Error(`Incomplete render: ${frames}/${total} frames`);
     ff.stdin!.end();
-    const [exitCode] = await encoded;
+    const [exitCode] = await Promise.race([encoded, stalled]);
     if (exitCode !== 0) throw new Error(`ffmpeg failed with exit code ${exitCode}`);
     console.log(`\nwrote ${out} (${frames} frames in ${((performance.now() - t0) / 1000).toFixed(1)}s)`);
   } finally {
+    if (watchdog) clearInterval(watchdog);
     for (const c of wss.clients) c.terminate();
     wss.close();
     if (ff.exitCode === null) ff.kill();

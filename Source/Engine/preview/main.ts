@@ -67,7 +67,9 @@ async function boot() {
     /** Stream raw RGBA frames [from,to) at fps over a WebSocket; acks keep a few frames in flight. */
     stream: (opts: { from: number; to: number; fps: number; ws: string; inflight?: number }) =>
       new Promise<Record<string, number>>((resolve, reject) => {
-        const { from, to, fps, ws: wsUrl, inflight = 10 } = opts;
+        // Two full-HD RGBA frames already occupy ~16 MB before browser/WS copies.
+        // A small window bounds memory during long exports without changing frame times.
+        const { from, to, fps, ws: wsUrl, inflight = 2 } = opts;
         const ws = new WebSocket(wsUrl);
         ws.binaryType = 'arraybuffer';
         const first = Math.round(from * fps);
