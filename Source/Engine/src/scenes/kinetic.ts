@@ -47,9 +47,14 @@ export class Kinetic extends Scene {
     const prev = lines[li - 1];
     const next = lines[li + 1];
     const show: Line[] = [];
-    if (prev && line.start - prev.end < 1.2) show.push(prev);
-    show.push(line);
-    if (next && next.start - line.end < 1.2) show.push(next);
+    // Short plates keep a stable layout across lyric-line changes. Adding/removing a
+    // neighbour at a word boundary recentres the block abruptly and reads as a jump.
+    if (lines.length <= 3) show.push(...lines);
+    else {
+      if (prev && line.start - prev.end < 1.2) show.push(prev);
+      show.push(line);
+      if (next && next.start - line.end < 1.2) show.push(next);
+    }
 
     const size = Math.round(Math.max(40, W * 0.031));
     ctx.font = font(size, theme.fontDisplay, 600);
@@ -104,7 +109,7 @@ export class Kinetic extends Scene {
         const active = prog > 0 && t < w.end + hold;
         // pop on word onset, decaying through the word
         const popT = clamp((t - w.start) / 0.22);
-        const pop = active ? ease.outBack(popT) * 0.06 : 0;
+        const pop = active ? Math.sin(Math.PI * popT) * 0.06 : 0;
         const spoken = prog >= 1;
         const upcoming = prog <= 0;
 
@@ -112,7 +117,7 @@ export class Kinetic extends Scene {
         let alpha = lineAlpha;
         if (upcoming) alpha *= 0.32;
         if (active) { alpha = 1; }
-        if (spoken && isCurrent) alpha = 0.62;
+        if (spoken && isCurrent && !active) alpha = 0.62;
 
         const emph = isParamEmphasis(this.ctx.params, w.w);
         if (emph) { fill = theme.accent; alpha = Math.max(alpha, 0.95); }
@@ -146,7 +151,7 @@ export class Kinetic extends Scene {
 
     // progress hairline under the current line
     const hairW = Math.min(W * 0.2, 340);
-    const hy = y0 + (show.length - 1) * lh + lh * 0.72;
+    const hy = y0 + (rows.length - 1) * lh + lh * 0.72;
     const lineProg = clamp((t - line.start) / Math.max(1e-3, line.end - line.start));
     ctx.fillStyle = withAlpha(theme.ink, 0.12);
     ctx.fillRect(W / 2 - hairW / 2, hy, hairW, 2);

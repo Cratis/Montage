@@ -17,6 +17,7 @@ import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';
 import { extname, join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 
 const APP = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -75,7 +76,7 @@ async function openPage(baseUrl: string, extraQuery = '') {
   const err: string | null = await page.evaluate(() => (window as any).__motion.error);
   if (err) throw new Error(`app failed to boot:\n${err}\n${logs.join('\n')}`);
   const sceneErrors: string[] = await page.evaluate(() => (window as any).__motion.errors());
-  if (sceneErrors.length) console.error('SCENE ERRORS:\n' + sceneErrors.join('\n'));
+  if (sceneErrors.length) { await browser.close(); throw new Error('SCENE ERRORS:\n' + sceneErrors.join('\n')); }
   return { browser, page, logs };
 }
 
@@ -136,6 +137,7 @@ async function video(page: any, pkgBase: string, from: number, to: number, fps: 
   args.push('-movflags', '+faststart', out);
 
   const ff = spawn(args[0]!, args.slice(1), { stdio: ['pipe', 'inherit', 'inherit'] });
+  const encoded = once(ff, 'close');
   let frames = 0;
   const total = Math.round(to * fps) - Math.round(from * fps);
   const t0 = performance.now();
@@ -144,28 +146,39 @@ async function video(page: any, pkgBase: string, from: number, to: number, fps: 
   await new Promise<void>((res) => wss.on('listening', () => res()));
   const wsPort = (wss.address() as any).port;
   wss.on('connection', (ws) => {
+    // Acknowledge only after the encoder has accepted the complete frame. Serial writes
+    // preserve frame order and honour stdin backpressure rather than buffering a whole film.
+    let queue = Promise.resolve();
+    ff.stdin!.on('error', () => ws.close());
+    ff.on('close', () => { if (frames < total) ws.close(); });
     ws.on('message', (data: Buffer, isBinary: boolean) => {
-      if (isBinary) {
-        ff.stdin!.write(data);
+      queue = queue.then(async () => {
+        if (!isBinary || data.length !== W * H * 4) throw new Error('Invalid RGBA frame payload');
+        if (!ff.stdin!.write(data)) await once(ff.stdin!, 'drain');
         frames++;
         ws.send(String(frames));
         if (frames % 60 === 0 || frames === total) {
           const el = (performance.now() - t0) / 1000;
           process.stdout.write(`\r${frames}/${total} frames  ${(frames / el).toFixed(1)} fps  eta ${Math.round((total - frames) / Math.max(frames / el, 0.01))}s   `);
         }
-      }
+      }).catch((error) => { console.error(error); ws.close(); });
     });
   });
 
-  await page.evaluate(({ from, to, fps, ws }: any) => (window as any).__motion.stream({ from, to, fps, ws }), {
-    from, to, fps, ws: `ws://127.0.0.1:${wsPort}`,
-  });
-  while (frames < total) await new Promise((r) => setTimeout(r, 20));
-  ff.stdin!.end();
-  await new Promise<void>((res) => ff.on('close', () => res()));
-  for (const c of wss.clients) c.terminate();
-  wss.close();
-  console.log(`\nwrote ${out} (${frames} frames in ${((performance.now() - t0) / 1000).toFixed(1)}s)`);
+  try {
+    await page.evaluate(({ from, to, fps, ws }: any) => (window as any).__motion.stream({ from, to, fps, ws }), {
+      from, to, fps, ws: `ws://127.0.0.1:${wsPort}`,
+    });
+    if (frames !== total) throw new Error(`Incomplete render: ${frames}/${total} frames`);
+    ff.stdin!.end();
+    const [exitCode] = await encoded;
+    if (exitCode !== 0) throw new Error(`ffmpeg failed with exit code ${exitCode}`);
+    console.log(`\nwrote ${out} (${frames} frames in ${((performance.now() - t0) / 1000).toFixed(1)}s)`);
+  } finally {
+    for (const c of wss.clients) c.terminate();
+    wss.close();
+    if (ff.exitCode === null) ff.kill();
+  }
 }
 
 // ---- main --------------------------------------------------------------------------------

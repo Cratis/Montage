@@ -55,6 +55,16 @@ export class MotionEngine {
   }
 
   async init(): Promise<void> {
+    // font-face declarations alone do not load fonts. Request the actual scene weights
+    // before measuring text, or offline frames can switch metrics partway through export.
+    await Promise.all([
+      document.fonts.load(`600 64px ${this.theme.fontDisplay}`),
+      document.fonts.load(`700 64px ${this.theme.fontDisplay}`),
+      document.fonts.load(`400 24px ${this.theme.fontBody}`),
+      document.fonts.load(`600 24px ${this.theme.fontBody}`),
+      document.fonts.load(`400 20px ${this.theme.fontMono}`),
+      document.fonts.load(`500 20px ${this.theme.fontMono}`),
+    ]);
     await document.fonts.ready;
     const jobs: Promise<void>[] = [];
 
@@ -136,7 +146,9 @@ export class MotionEngine {
 
     const entries = this.timeline;
     const idx = entries.findIndex((e) => t >= e.start && t < e.end);
-    const cur = idx >= 0 ? entries[idx] : (t < (entries[0]?.start ?? 0) ? entries[0] : entries.at(-1));
+    // Unvoiced gaps belong to the preceding scene, not the show's endcard. Falling
+    // back to the last entry here flashed the closing card between unrelated plates.
+    const cur = idx >= 0 ? entries[idx] : (entries.filter(e => e.start <= t).at(-1) ?? entries[0]);
     if (!cur) return '';
     const curIdx = entries.indexOf(cur);
     const prev = curIdx > 0 ? entries[curIdx - 1] : null;
@@ -144,7 +156,7 @@ export class MotionEngine {
     // transition state: the incoming scene's first tDur seconds composite over the previous.
     const tDur = cur.transitionDuration;
     const tin = prev && cur.transitionIn !== 'cut'
-      ? ease.inOutCubic(clamp((t - cur.start) / Math.max(1e-3, tDur)))
+      ? clamp((t - cur.start) / Math.max(1e-3, tDur))
       : 1;
     const transitioning = !!prev && tin < 1;
 
@@ -173,16 +185,16 @@ export class MotionEngine {
     if (transitioning && prev) {
       draw(prev, ctxA, Math.min(t, prev.end - 1e-3)); // outgoing holds its final frame
       draw(cur, ctxB, t);
-      this.composite(ctxA.canvas, cvB, cur.transitionIn, tin);
     } else {
-      draw(cur, ctxB, t);
+      draw(cur, ctxB, Math.max(cur.start, Math.min(t, cur.end - 1e-3)));
     }
 
     // final canvas: HUD + post
     const ctx = this.canvas.getContext('2d', { willReadFrequently: true })!;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.W, this.H);
-    ctx.drawImage(cvB, 0, 0);
+    if (transitioning) this.composite(cvA, cvB, cur.transitionIn, tin);
+    else ctx.drawImage(cvB, 0, 0);
     this.hud.draw(ctx, t, cur.type);
     postProcess(ctx, this.W, this.H, t);
     return cur.id;

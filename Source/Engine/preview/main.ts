@@ -5,6 +5,7 @@
 // page) or nothing, meaning 'package/' next to the page.
 
 import { MotionEngine, Player, normalizeSpec } from '../src/index';
+import { diagramSvg, type DiagramSpec } from '../src/scenes/diagram';
 
 const params = new URLSearchParams(location.search);
 const pkg = (params.get('pkg') ?? 'package').replace(/\/$/, '');
@@ -59,6 +60,10 @@ async function boot() {
     still: (t: number) => { player.seek(t); return engine.png(); },
     pixels: (t: number) => { player.seek(t); engine.renderAt(t); return engine.pixels().buffer; },
     png: () => engine.png(),
+    svg: (sceneId: string) => {
+      const scene = engine.timeline.find(e => e.id === sceneId);
+      return scene?.type === 'diagram' ? diagramSvg(scene.spec.params as DiagramSpec) : null;
+    },
     /** Stream raw RGBA frames [from,to) at fps over a WebSocket; acks keep a few frames in flight. */
     stream: (opts: { from: number; to: number; fps: number; ws: string; inflight?: number }) =>
       new Promise<Record<string, number>>((resolve, reject) => {
@@ -85,7 +90,7 @@ async function boot() {
           acked = parseInt(String(ev.data), 10);
           pump();
         };
-        ws.onclose = () => { if (!resolved) { resolved = true; resolve({}); } };
+        ws.onclose = () => { if (!resolved) { resolved = true; reject(new Error(`Frame stream closed early: ${acked}/${total} acknowledged`)); } };
       }),
   };
   (window as any).__motion = api;

@@ -15,6 +15,7 @@ import { Quote } from '../scenes/quote';
 import { Code } from '../scenes/code';
 import { Endcard } from '../scenes/endcard';
 import { ImageScene } from '../scenes/image';
+import { Diagram } from '../scenes/diagram';
 
 export const registry: Record<string, SceneClass> = {
   title: Title,
@@ -29,6 +30,7 @@ export const registry: Record<string, SceneClass> = {
   code: Code,
   endcard: Endcard,
   image: ImageScene,
+  diagram: Diagram,
 };
 
 export const sceneClassFor = (type: string): SceneClass => registry[type] ?? Statement;

@@ -238,21 +238,9 @@ public static class DemoShows
                 """{ "kicker": "the superpower", "headline": "One format in the middle. Every tool works.", "accent": "Every tool" }"""),
 
             Scene(
-                "flow",
+                "diagram",
                 "A language above, a runtime below, and a small stable format between them. Dotnet has I L. The J V M has bytecode. And now the business has Screenplay.",
-                """
-                {
-                  "headline": "Every platform has its IL",
-                  "kicker": "the pattern",
-                  "nodes": [
-                    { "label": "Teams", "sub": "intent" },
-                    { "label": "AI", "sub": "drafts" },
-                    { "label": "Code", "sub": "details" },
-                    { "label": "Screenplay", "sub": "one format" },
-                    { "label": "Boards + apps", "sub": "every viewer" }
-                  ]
-                }
-                """),
+                DemoDiagrams.Platforms),
 
             Scene(
                 "code",
@@ -280,19 +268,9 @@ public static class DemoShows
                 """),
 
             Scene(
-                "steps",
-                "Getting started is one hour. Model it in Studio, scaffold with one command, compose up the containers, run the backend, open the frontend — and your first event is in the log.",
-                """
-                {
-                  "headline": "The first hour",
-                  "steps": [
-                    { "title": "Model it", "text": "Studio, event modeling" },
-                    { "title": "Scaffold", "text": "dotnet new cratis" },
-                    { "title": "Run it", "text": "compose up, dotnet run" },
-                    { "title": "First event", "text": "in the Workbench" }
-                  ]
-                }
-                """),
+                "diagram",
+                "One board, many hosts. Studio, V S Code and M C P Apps above. Arc explorer, cratis view and your own application below. Every host draws the same model with the same board package.",
+                DemoDiagrams.Hosts),
 
             Scene(
                 "metric",
@@ -300,22 +278,9 @@ public static class DemoShows
                 """{ "value": 6, "format": "number", "label": "commands from empty folder to first event", "delta": "install · new · up · run · dev · open", "spark": [1, 2, 3, 3, 4, 5, 6] }"""),
 
             Scene(
-                "image",
-                "And here is the part that sells it. Open a dot play file and the board just appears — every slice, every persona, every specification, drawn from the very file the rest of the system builds from.",
-                """
-                {
-                  "images": [
-                    {
-                      "src": "images/board.svg",
-                      "headline": "the board",
-                      "motion": "kenburns",
-                      "describe": "Slow Ken Burns drift across the event model board, settling on the AddBook slice"
-                    }
-                  ],
-                  "headline": "Open a .play file, get a board",
-                  "text": "the same file the tools compile, run and render"
-                }
-                """),
+                "diagram",
+                "People, A I assistants, Studio, C sharp code and live systems all write Screenplay. Event models, running apps, generated code and diagnostics all read it. Nobody on the left has to know who is on the right.",
+                DemoDiagrams.Hub),
 
             Scene(
                 "endcard",
