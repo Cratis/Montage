@@ -137,6 +137,8 @@ app.MapPost("/api/motion/shows/{id}/images", async (string id, HttpRequest reque
     return Results.Ok(new { path = $"images/{name}" });
 });
 
+Motion.Shows.Design.DesignEndpoints.Map(app, workspace);
+
 app.MapFallbackToFile("/index.html");
 
 await app.RunAsync();

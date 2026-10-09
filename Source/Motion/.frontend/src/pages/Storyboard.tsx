@@ -10,6 +10,7 @@ import { JobRow } from './JobRow';
 import { SaveStoryboard } from '../../Api/Shows/Storyboard';
 import { SaveSceneTiming } from '../../Api/Shows/Timing/SaveSceneTiming';
 import { ShowPlan } from '../plan';
+import { DiagramDesigner } from './DiagramDesigner';
 
 /** One scene in the storyboard being edited. */
 interface Scene {
@@ -36,6 +37,8 @@ const TYPES: { value: string; label: string; hint: string }[] = [
     { value: 'steps', label: 'Steps', hint: 'numbered how-it-works list' },
     { value: 'compare', label: 'Compare', hint: 'before / after, two sides' },
     { value: 'flow', label: 'Flow', hint: 'pipeline of nodes lighting up' },
+    { value: 'diagram', label: 'Infographic', hint: 'editable SVG boxes, routed connectors and per-element choreography' },
+    { value: 'image', label: 'Images', hint: 'pictures with per-image motion' },
     { value: 'metric', label: 'Metric', hint: 'one big number, counting up' },
     { value: 'chart', label: 'Chart', hint: 'bar or line chart, drawn' },
     { value: 'quote', label: 'Quote', hint: 'a quotation with attribution' },
@@ -1027,6 +1030,7 @@ const TABS = [
     { id: 'visuals', label: 'Visuals' },
     { id: 'narration', label: 'Narration' },
     { id: 'motion', label: 'Motion' },
+    { id: 'design', label: 'Design' },
     { id: 'pacing', label: 'Pacing' },
     { id: 'timing', label: 'Timing' },
 ] as const;
@@ -1121,7 +1125,7 @@ function SceneInspector({
                     <p className='text-sm text-[var(--cr-motion-dim)]'>
                         Pictures on the slide. Each gets its own motion and a
                         <span className='text-[var(--cr-motion-ink)]'> direction</span> — what should happen to it, in plain
-                        words. The planner reads those notes when it regenerates the scene.
+                        words. Directions are saved with the scene; currently the chosen preset drives image motion.
                     </p>
                     {(imagesRaw ?? []).length === 0 && (
                         <p className='text-xs text-[var(--cr-motion-faint)]'>No images yet — add one below (PNG, JPG, GIF, WebP, SVG).</p>
@@ -1294,9 +1298,28 @@ function SceneInspector({
                             </>
                         ) : (
                             <p className='text-sm text-[var(--cr-motion-dim)]'>
-                                This scene is word-timed — the narration itself drives its motion, word by word.
+                                {scene.type === 'diagram' ? 'Configure per-box and connector choreography in the Design tab.' : scene.type === 'image' ? 'Configure each image’s motion in the Visuals tab.' : 'This scene is word-timed — the narration itself drives its motion, word by word.'}
                             </p>
                         )}
+                </div>
+
+                <div className='flex flex-col gap-3' style={panelStyle('design')}>
+                    {scene.type === 'diagram' ? (
+                        <>
+                        <button className='chip px-3 py-2 self-start text-sm' onClick={() => {
+                            const bridge = (iframeRef.current?.contentWindow as unknown as { __motion?: { svg: (id: string) => string | null } })?.__motion;
+                            const svg = bridge?.svg(`scene-${sceneNumber}`);
+                            if (!svg) return;
+                            const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+                            const link = document.createElement('a'); link.href = url; link.download = `scene-${sceneNumber}.svg`; link.click();
+                            setTimeout(() => URL.revokeObjectURL(url), 1000);
+                        }}>Download packaged SVG (save edits first)</button>
+                        <DiagramDesigner params={scene.params} spoken={scene.spoken} defaultProvider={show.AIProviderId}
+                            onApply={(params) => onChange({ params })} />
+                        </>
+                    ) : (
+                        <p className='text-sm text-[var(--cr-motion-dim)]'>Choose the Infographic scene type to design an editable relationship diagram with SVG outlines, routed arrows and per-box animation. Image motion is configured in Visuals.</p>
+                    )}
                 </div>
 
                 <div className='flex flex-col gap-3' style={panelStyle('pacing')}>
@@ -1365,6 +1388,10 @@ function ParamsEditor({ scene, onParam }: { scene: { type: string; params: Recor
     const set = onParam;
 
     switch (scene.type) {
+        case 'diagram':
+            return <p className='text-sm text-[var(--cr-motion-dim)]'>The Design tab edits boxes, animation beats and look & feel, or generates a new infographic proposal with AI.</p>;
+        case 'image':
+            return <><Field label='Headline' value={asString(p.headline)} onChange={(v) => set('headline', v)} /><Field label='Caption' value={asString(p.text)} onChange={(v) => set('text', v)} /></>;
         case 'title':
             return (
                 <>
