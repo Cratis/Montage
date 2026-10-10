@@ -4,36 +4,36 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Aspire -->
-    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.5.4" />
-    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.5.4" />
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.6.1" />
+    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.6.1" />
     <!-- Cratis -->
     <!-- Keep the public Cratis / Arc family aligned so generated self-bindings and runtime contracts
          are built against the same Chronicle contract generation. -->
-    <PackageVersion Include="Cratis" Version="22.51.0" />
+    <PackageVersion Include="Cratis" Version="22.65.0" />
     <PackageVersion Include="Cratis.Arc" Version="22.51.0" />
-    <PackageVersion Include="Cratis.Arc.MongoDB" Version="22.51.0" />
-    <PackageVersion Include="Cratis.Arc.ProxyGenerator.Build" Version="22.51.0" />
-    <PackageVersion Include="Cratis.Arc.Swagger" Version="22.51.0" />
+    <PackageVersion Include="Cratis.Arc.MongoDB" Version="22.65.0" />
+    <PackageVersion Include="Cratis.Arc.ProxyGenerator.Build" Version="22.65.0" />
+    <PackageVersion Include="Cratis.Arc.Swagger" Version="22.65.0" />
     <!-- Keep Chronicle clients and the Aspire hosting integration on the same release; the AppHost
          pins the Chronicle kernel image to this same version (Source/Composition/Program.cs). -->
-    <PackageVersion Include="Cratis.Chronicle" Version="19.33.3" />
-    <PackageVersion Include="Cratis.Chronicle.Aspire" Version="19.33.3" />
+    <PackageVersion Include="Cratis.Chronicle" Version="19.38.1" />
+    <PackageVersion Include="Cratis.Chronicle.Aspire" Version="19.38.1" />
     <!-- Analyzers, pinned by the root Directory.Build.props for every project. -->
     <PackageVersion Include="StyleCop.Analyzers" Version="1.2.0-beta.556" />
-    <PackageVersion Include="Roslynator.Analyzers" Version="5.0.0" />
-    <PackageVersion Include="Meziantou.Analyzer" Version="3.0.259" />
+    <PackageVersion Include="Roslynator.Analyzers" Version="5.0.1" />
+    <PackageVersion Include="Meziantou.Analyzer" Version="3.0.296" />
     <PackageVersion Include="Microsoft.Net.Compilers.Toolset" Version="5.9.0" />
-      <PackageVersion Include="Cratis.AI" Version="7.9.1" />
+    <PackageVersion Include="Cratis.AI" Version="7.22.0" />
     <!-- Microsoft Orleans: Orleans.Providers.MongoDB has no Orleans 10 release - 9.5.0 is the
          newest - and it pulls in Microsoft.Orleans.Reminders 9.0.1. Pinning Reminders explicitly at
          10.3.1 keeps the whole Orleans surface on 10.x (Direct's arrangement). -->
-    <PackageVersion Include="Cratis.Orleans" Version="1.15.2" />
-    <PackageVersion Include="Cratis.Orleans.Chronicle" Version="1.15.2" />
-    <PackageVersion Include="Cratis.Orleans.Storage.MongoDB" Version="1.15.2" />
-    <PackageVersion Include="Microsoft.Orleans.Reminders" Version="10.3.1" />
+    <PackageVersion Include="Cratis.Orleans" Version="1.16.0" />
+    <PackageVersion Include="Cratis.Orleans.Chronicle" Version="1.16.0" />
+    <PackageVersion Include="Cratis.Orleans.Storage.MongoDB" Version="1.16.0" />
+    <PackageVersion Include="Microsoft.Orleans.Reminders" Version="10.4.0" />
     <PackageVersion Include="Microsoft.Orleans.Sdk" Version="10.3.1" />
-    <PackageVersion Include="Microsoft.Orleans.Server" Version="10.3.1" />
-    <PackageVersion Include="Microsoft.Orleans.Serialization.SystemTextJson" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.Server" Version="10.4.0" />
+    <PackageVersion Include="Microsoft.Orleans.Serialization.SystemTextJson" Version="10.4.0" />
     <PackageVersion Include="Orleans.Providers.MongoDB" Version="9.5.0" />
-</ItemGroup>
+  </ItemGroup>
 </Project>
