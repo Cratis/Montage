@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "screenplay": {
+      "type": "stdio",
+      "command": "cratis",
+      "args": [
+        "screenplay",
+        "mcp",
+        "--project-root-env",
+        "CLAUDE_PROJECT_DIR"
+      ]
+    }
+  }
+}

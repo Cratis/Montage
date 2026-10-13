@@ -1,6 +1,16 @@
 <!-- cratis-ai-managed: skills/cratis-specifications-typescript/references/typescript-patterns.md -->
 # TypeScript specification patterns
 
+## Contents
+
+- Frameworks
+- Chai assertions
+- Sinon stubbing
+- The `given()` helper
+- Reusable context class
+- Asynchronous specifications
+- One behavior per file
+
 Detail for the `given()` surface: assertions, stubbing, asynchronous
 specifications, and folder layout.
 
@@ -175,7 +185,7 @@ describe('when <behavior>', given(a_<system_under_test>, context => {
 Await the promise in `beforeEach` rather than inside each `it()`, so the action
 under specification runs exactly once.
 
-## One outcome per file
+## One behavior per file
 
 ```
 when_<behavior>/

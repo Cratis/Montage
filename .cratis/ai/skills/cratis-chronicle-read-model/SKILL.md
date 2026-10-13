@@ -1,6 +1,6 @@
 ---
 name: cratis-chronicle-read-model
-description: Create a Chronicle read model and its query surface - past-tense event types, the read-model record and its key, choosing a projection or a reducer to build it, snapshot versus observable queries, and reading an instance directly through IReadModels. Use when creating a read model from scratch; for changing how an existing model is populated use the projection or reducer skill instead.
+description: Create a Chronicle read model and its query surface - past-tense event types, the read-model record and its key, choosing a projection or a reducer to build it, snapshot versus observable queries (including why Arc does not discover a query declared to return Subject or BehaviorSubject), and reading an instance directly through IReadModels. Use when creating a read model from scratch; for changing how an existing model is populated use the projection or reducer skill instead.
 license: MIT
 ---
 <!-- cratis-ai-managed: skills/cratis-chronicle-read-model/SKILL.md -->
@@ -25,8 +25,8 @@ This skill is verified against these exact sources:
 | Package | Version | Purpose |
 | --- | --- | --- |
 | `Cratis.Chronicle` | `18.3.0` | `Cratis.Chronicle.Events`, `Cratis.Chronicle.Keys`, `Cratis.Chronicle.ReadModels` |
-| `Cratis.Arc.Core` | current | `Cratis.Arc.Queries.ModelBound.ReadModelAttribute` and `PathAttribute` |
-| `Cratis.Arc.MongoDB` | current | the `Observe` family of `IMongoCollection<T>` extensions |
+| `Cratis.Arc.Core` | `22.75.0` | `Cratis.Arc.Queries.ModelBound.ReadModelAttribute` and `PathAttribute` |
+| `Cratis.Arc.MongoDB` | `22.75.0` | the `Observe` family of `IMongoCollection<T>` extensions |
 
 Reverify product sources before claiming support for another version. Confirm
 the exact Arc package version in the consuming project before citing one.
