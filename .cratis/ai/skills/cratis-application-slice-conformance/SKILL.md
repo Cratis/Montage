@@ -27,6 +27,15 @@ other infrastructure. Change behaviour in the model first, never in managed outp
   (`cratis-application-slice-specifications`); the render workflow itself
   (`cratis-screenplay-render-and-gap-fill`).
 
+## Startup verification for Automation and Translation
+
+- **Real startup participation.** A `ReactorScenario` bypasses observer registration, so it
+  cannot show that the application subscribes the reactor. Verify, through the repository's
+  integration route or a startup check, that the real application discovers the intended
+  reactor (its assembly is scanned, per the repository's discovery convention), that it observes
+  the intended event store and event sequence, and that a trigger event delivered there reaches
+  it. Report this apart from the in-process specifications.
+
 ## Verified product sources
 
 This skill is a method: it names no API of its own. Product facts it relies on are pinned
@@ -65,7 +74,7 @@ are, is `cratis-screenplay-modeling-lifecycle` ("Decide the level first").
 4. Existing code has no authority over the contract.
 
 Precedence inside the contract. Executable parts of the contract beat prose: specifications,
-mappings, constraints and authorization first; then the `description` and realization notes;
+mappings, constraints and authorization first; then the `description`, `documentation` and realization notes;
 then issue text. If prose contradicts an executable part, that is a model defect: stop that
 scope, return an **edit request** (address, change, reason) and do not pick a side silently.
 Reading a question is not resolving it. Details: `references/contract-and-precedence.md`.
@@ -106,6 +115,11 @@ one covers the slice, otherwise the agreed outline).
 **Never edit, skip or delete a specification derived from the contract to make code pass.**
 Change the code, or return an edit request. Do not touch test files outside the slice unless
 told to.
+
+Where the model is a `.play` and the code is Arc, Marten or Critter Stack, `cratis screenplay
+conform <model-root> --project <path>` (CLI 3.42.0 or later; exit 0/1/2) adds structural drift
+evidence: exact-address comparison of recovered declarations, never behavior or equivalence. It
+runs MSBuild on the project (trusted clone only). It supplements, and never replaces, steps 2 to 4.
 
 ### 5. Delta delivery
 After a model or outline change, the work list is every element and specification that
@@ -170,8 +184,8 @@ contract is implemented in code, and no specification lacks an executable equiva
 - `references/contract-and-precedence.md` - sources, precedence, conflicting evidence.
 - `references/build-prompts.md` - standing instructions, mandatory build flow, loop prompt, result packet, learning candidates.
 - `references/checklists.md` - State Change, State View, Automation final checklists; Chronicle runtime guarantees; evidence.
-- `references/worked-example.md` - a marina slice reconciled and re-delivered, with the report.
-- `references/provenance.md` - sources and attribution.
+- `references/worked-example.md` - a marina slice reconciled and re-delivered, with the report. Read when you need an example of reconciliation, delta delivery, or the final report.
+- `references/provenance.md` - sources and attribution. Read when checking source attribution or adaptation history.
 
 ## Lineage
 

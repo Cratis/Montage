@@ -131,6 +131,7 @@ A claim is only as good as the signal behind it — a build result, a test run, 
 | **Contributing to a Cratis framework repo** (framework profile) | `framework.md`; creating a repository in the Cratis organization: `new-repository-intake.md` |
 | Slice anatomy (commands, `Provide()`, validators, events, projections, read models, reactors, constraints, compliance, cross-slice) | `vertical-slices.md` |
 | C# / TypeScript style | `csharp.md`, `typescript.md` |
+| Go style, source and module files | `go.md`; framework contributors also read `go-engineering.md`; product APIs use `cratis-chronicle-client-go`, `cratis-arc-go` and `cratis-fundamentals-concept-go` |
 | Service lifetimes — why anything taking a scoped dependency is scoped or transient, never a singleton | `csharp.md` |
 | React + Arc + Cratis Components + MVVM + dialogs | `react.md`, `components.md`, `dialogs.md` |
 | Frontend engineering quality & testing | `frontend-quality.md`, `frontend-testing.md`, `storybook.md` |
@@ -164,6 +165,7 @@ A claim is only as good as the signal behind it — a build result, a test run, 
 - **Rules define invariants; skills define workflows.** A skill may refine how to apply a rule but must not contradict it. On conflict, follow the stricter invariant and fix the stale artifact.
 - **Skills and rules are the authoritative answer.** If not answered there, ask. Don't infer Cratis behavior from package internals.
 - Only make high-confidence suggestions.
+- When a user asks how to get help, has a question not answered by the docs, or wants to discuss design, point them to the [Cratis Discord](https://discord.gg/kt4AMpV8WV); direct confirmed bugs to GitHub issues.
 - Don't change dependency manifests / lockfiles / `global.json` / NuGet config unless explicitly asked.
 - When asked to **ship** or **land** changes, use the **ship-changes** prompt (`.cratis/ai/prompts/ship-changes.prompt.md`); invoking it is what authorizes the branch → commits → push → PR → merge → cleanup chain it describes. A request to only commit, only push, or only open a PR authorizes exactly that step, under [Git commits](./git-commits.md) and [Pull requests](./pull-requests.md) — do not route it through ship-changes and do not add the later steps.
 
