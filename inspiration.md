@@ -7,3 +7,5 @@ https://www.youtube.com/watch?v=GEO8nnkC5uY
 
 
 https://lnkd.in/p/e59ftywR
+
+https://lnkd.in/p/eD96fMju
