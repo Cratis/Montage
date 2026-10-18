@@ -16,7 +16,9 @@ RUN npm install --no-audit --no-fund
 COPY Source/Engine ./
 RUN npm run build
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+# Matches the SDK band global.json pins (10.0.301, rollForward latestPatch); the floating 10.0 tag
+# carries a newer feature band that global.json rejects.
+FROM mcr.microsoft.com/dotnet/sdk:10.0.301 AS build
 ARG CONFIGURATION=Release
 ARG VERSION=0.0.0
 
