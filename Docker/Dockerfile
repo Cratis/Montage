@@ -9,8 +9,10 @@
 # node_modules stay in the image because the editor drives the offline renderer through node.
 FROM node:24-bookworm-slim AS engine
 WORKDIR /src/Source/Engine
-COPY Source/Engine/package.json Source/Engine/package-lock.json ./
-RUN npm ci
+COPY Source/Engine/package.json ./
+# The repository does not commit lockfiles (see Cratis/Montage#5); npm install writes the
+# package-lock.json the runtime stage copies.
+RUN npm install --no-audit --no-fund
 COPY Source/Engine ./
 RUN npm run build
 
