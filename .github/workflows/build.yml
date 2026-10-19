@@ -50,8 +50,7 @@ jobs:
 
       - name: Install
         working-directory: Source/Engine
-        # The repository does not commit lockfiles, so npm ci cannot run here (see #5).
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Type check and build
         working-directory: Source/Engine
