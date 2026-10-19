@@ -13,6 +13,8 @@ workspace/
 .yarn/
 yarn.lock
 package-lock.json
+# The render engine commits its lockfile so CI and the Docker image install reproducibly with npm ci (#5).
+!Source/Engine/package-lock.json
 appsettings.local.json
 .cratis/screenplay/
 .ai-work/
