@@ -4,8 +4,6 @@
 using System.Reactive.Subjects;
 using Cratis.Arc.MongoDB;
 using Cratis.Chronicle;
-using Cratis.Orleans.Jobs;
-using Cratis.Orleans.Storage.Jobs;
 using MongoDB.Driver;
 using Montage.Jobs;
 
@@ -58,34 +56,8 @@ public record JobActivity(
         var all = await manager.GetAllJobs();
 
         return [.. all
-            .Select(ToActivity)
+            .Select(job => job.ToActivity())
             .OrderByDescending(job => job.Created)];
-    }
-
-    static JobActivity ToActivity(JobState job)
-    {
-        var showId = string.Empty;
-        try
-        {
-            showId = job.Request?.GetType().GetProperty("ShowId")?.GetValue(job.Request)?.ToString() ?? string.Empty;
-        }
-        catch
-        {
-            // a job without a ShowId on its request is still a job worth listing
-        }
-
-        var failure = job.StatusChanges.LastOrDefault(change => change.Status == JobStatus.Failed);
-        var error = failure is null ? string.Empty : string.Join("; ", failure.ExceptionMessages);
-
-        return new JobActivity(
-            job.Id.ToString() ?? string.Empty,
-            job.Type.ToString() ?? string.Empty,
-            job.Details.ToString() ?? string.Empty,
-            job.Status.ToString(),
-            job.Created,
-            showId,
-            error,
-            job.IsPreparingOrRunning);
     }
 
     /// <summary>
