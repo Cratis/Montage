@@ -11,8 +11,7 @@
 - Verify delivery through a real client
 - Product sources
 
-Verified against Chronicle **v19.48.0**. Reactor/reducer opt-in shipped in
-**19.41.0**; typed materialized projection opt-in shipped in **19.48.0**.
+Requires Chronicle 19.41.0 or later for reactor/reducer opt-in and 19.48.0 or later for typed materialized projection opt-in.
 Configure `ChronicleOptions.EventGenerationDelivery` before connecting; see
 [standalone and host examples](../../cratis-chronicle-client-dotnet/references/pinned-generation-delivery.md).
 
@@ -52,6 +51,12 @@ identifiers may pin different generations. See the client reference for the
 client and kernel registration exception names. Changing a reactor/reducer's
 pin or delivery mode does not itself trigger replay; request replay when prior
 state needs rebuilding.
+
+Requires Chronicle 19.66.0 for generation-pinned event-store subscriptions.
+Their builder opts in separately with `WithGenerationDelivery(Pinned)` and
+explicit or typed event pins; the global observer option does not opt them in.
+Both source and target stores must register the generation. Read the client
+reference above for registration and forwarding failure behavior.
 
 ## PDL pins are resolved once, when saved
 
@@ -112,4 +117,4 @@ validates all clauses; `Engine/DefinitionLanguage/ProjectionEventTypeReference.c
 resolves PDL bare names. `Source/Clients/Testing/ReadModels/ProjectionReadModelProcessor.cs`
 and `Reactors/ReactorScenario.cs` define the scenario boundary.
 
-See [Chronicle's event type migration documentation](https://github.com/Cratis/Chronicle/blob/v19.48.0/Documentation/concepts/event-type-migrations.mdx#opt-in-to-pinned-observer-delivery).
+See [Chronicle's event type migration documentation](https://github.com/Cratis/Chronicle/blob/main/Documentation/concepts/event-type-migrations.mdx#opt-in-to-pinned-observer-delivery).

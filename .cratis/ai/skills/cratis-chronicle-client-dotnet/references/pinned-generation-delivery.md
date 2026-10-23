@@ -4,6 +4,14 @@
 
 # Pin event generations before connecting
 
+## Contents
+
+- Standalone client
+- Host integration
+- Scope and registration
+- Event-store subscription pins
+- Product sources
+
 Requires Chronicle **19.41.0+** for client reactors/reducers and **19.48.0+** for
 typed materialized projections. Upgrade every kernel silo before enabling the
 option. `Compatibility` remains the default; adding a generation alone does not
@@ -11,7 +19,7 @@ opt consumers in.
 
 ## Standalone client
 
-This configuration excerpt uses `Cratis.Chronicle` **19.48.0** and a running
+This configuration excerpt uses `Cratis.Chronicle` and a running
 local development kernel. Keep the client alive for observation; supply logging
 and a service provider when the application's observers need them (see the main
 skill's standalone checklist).
@@ -33,7 +41,7 @@ var eventStore = await client.GetEventStore("People");
 
 `AddCratisChronicle` extends `IHostApplicationBuilder` (an `IHostBuilder`
 overload also exists), **not** `IServiceCollection`. Its `ChronicleClientOptions` inherits the delivery option.
-This worker-host configuration excerpt uses `Cratis.Chronicle` **19.48.0** and
+This worker-host configuration excerpt uses `Cratis.Chronicle` and
 `Microsoft.Extensions.Hosting`; add the application's hosted worker and start
 the host as usual.
 
@@ -73,21 +81,45 @@ builder.AddCratisChronicle(options =>
   submitted as both wildcard and `Pinned` is unsupported and rejected by the
   kernel with `EventGenerationDeliveryNotSupported`; the option does not make
   wildcard pinning work.
-- Ad-hoc queries/event reads are not opted in. Neither are webhooks, captures,
-  or event-store subscriptions. Do not generalize this option to every read
-  path, or to unreleased generation-delivery work.
+- Ad-hoc queries/event reads, webhooks and captures are not opted in. Event-store
+  subscriptions have their own builder opt-in below; the client-wide setting
+  does not enable it.
 
 For delivery-time migration, persisted PDL pins, and testing limits, read
 [the migration reference](../../cratis-chronicle-event-type-migration/references/pinned-generations.md).
 
+## Event-store subscription pins
+
+Requires Chronicle 19.66.0 on client and kernel. Check `dotnet list package`
+and the deployed kernel tag; older builders may throw
+`EventStoreSubscriptionGenerationDeliveryNotSupported`. Compatibility remains
+the default.
+
+On `eventStore.Subscriptions.Subscribe(id, sourceStore, configure)`, configure
+`WithGenerationDelivery(EventGenerationDelivery.Pinned)` and either
+`WithEventType<TEvent>()` for that CLR type's declared generation or
+`WithEventType(eventTypeId, generation)` for an explicit pin. This selects the
+generation forwarded into the target inbox during live delivery, catch-up,
+replay and partition retries; it is separate from the inbox observer's own pin.
+
+Both stores must register the generation. Registration refuses a missing
+source/target generation or two generations of the same identifier. If the
+target loses its pin at forwarding time, the failing batch appends nothing and
+does not advance past the failing event; earlier acknowledged events stay
+acknowledged. Changing only a pin or delivery mode rebinds the subscription in
+place, without an unsubscribe. Verify migration and protected-value release
+through real-client integration, not just a handler fed the desired CLR type.
+
 ## Product sources
 
-Verified at `Cratis/Chronicle` **v19.48.0**:
+Source: `Cratis/Chronicle`:
 `Source/Clients/DotNET/ChronicleOptions.cs`,
 `Observation/EventGenerationDelivery.cs`,
 `ChronicleHostApplicationBuilderExtensions.cs`,
 `Projections/ProjectionGenerationDeliveryValidation.cs`, and
 `Source/Kernel/Core/Projections/Engine/ProjectionFactory.cs`.
-The option and reactor/reducer validation also exist at **v19.41.0**.
+The option and reactor/reducer validation are also in the client.
 
-See [Chronicle's pinned observer delivery documentation](https://github.com/Cratis/Chronicle/blob/v19.48.0/Documentation/concepts/event-type-migrations.mdx#opt-in-to-pinned-observer-delivery).
+See [Chronicle's pinned observer delivery documentation](https://github.com/Cratis/Chronicle/blob/main/Documentation/concepts/event-type-migrations.mdx#opt-in-to-pinned-observer-delivery).
+
+| Copying a version out of the repository | It is a placeholder; take it from nuget.org |

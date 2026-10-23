@@ -7,13 +7,19 @@
 - Source reference and identifier checks
 - Public events and translation direction
 - Explicit enum member numbers
+- Reserved stored names and event pins
 - Named keys, production routes and observer filters
+- Ambiguous match patterns (PLAY0803)
+- Projection event scope (PLAY0801)
+- Reducer instance identity (PLAY0690)
 - Caller identity, compliance and routes
 - Specification metadata, callers, cases and locators
 - Guarded interaction diagnostics
+- UI profile shell: root template, options, appearance
 - Structural completeness and timeline checks
 - Editor versus C# verdicts
 - Consistency errors (V1: the model contradicts itself)
+- Batches, described handlers, text rules and protected reads
 - Binding (V2 and V3) - see `executable-subset.md` for the full table
 - Frequent errors
 - Render admission (V5): `STAGE-*`, `CLI-RENDER-*`, `STAGE-CRATIS-*`
@@ -27,7 +33,7 @@ I (never fails, even with `--warnings-as-errors`). `PLAY` = compiler, `SP` = Arc
 Where each layer appears: `screenplay <folder>` / `cratis screenplay validate` = syntax and
 consistency (V1). MCP `executable-diagnostics` = binding (V2 reads them, V3 needs none:
 PLAY0268-0274, 0350-0352, 0389, 0449). `cratis render` = binding with the bundled compiler,
-then STAGE (V5 admission). Tool differences: `versions.md`.
+then STAGE (V5 admission). Tool differences: `../SKILL.md` ("Tool versions and the contract").
 
 ## Warnings that hide defects (always validate with `--warnings-as-errors`)
 | Code | Meaning | Fix |
@@ -43,7 +49,7 @@ then STAGE (V5 admission). Tool differences: `versions.md`.
 
 ## Source reference and identifier checks
 
-At Screenplay 4.127.0 these are V1 source checks, not binding-only gaps:
+These are V1 source checks, not binding-only gaps:
 
 | Code | Severity | Meaning |
 | --- | --- | --- |
@@ -55,8 +61,7 @@ Legacy compliance spellings (`@pii`/`@sensitive`) do not evade PLAY0515.
 
 ## Public events and translation direction
 
-Source checked at Screenplay 4.135.0; all are errors. These constructs bind as released
-ESM v9, except public/foreign imports without local shapes (PLAY0268).
+PLAY0607–0620 are errors. These constructs bind as ESM v9, except public/foreign imports without local shapes (PLAY0268).
 
 | Code | Meaning / fix |
 | --- | --- |
@@ -81,9 +86,21 @@ or non-Translate direction. Repair discovery uses `repair-capabilities`, workspa
 `repairs`, then revision-checked `propose-repair`; do not guess a direction.
 See automations-and-translations `references/public-events-and-direction.md`.
 
+| Code | Severity | Meaning / fix |
+| --- | --- | --- |
+| PLAY0694 | W | An unrouted reaction in a directionless Translate consumes an event its own capture appends (root, children or nested). Keep the capture here and move the reaction to a separate Automation slice with its specs. No automatic repair; `--warnaserror` fails. Other slices' captures and reactions with a `from` route do not trigger this check; explicit inbound local-event consumption is PLAY0616. |
+| PLAY0700 | E | Event-capture `key` is not required on every `from` event, or uses a `$` context key. Choose a required content property or deliberately change the source contracts; no repair. |
+| PLAY0701 | E | `given capture` / `when capture` names a capture over events. Present `given <FromEvent>` / `when append <FromEvent>`. A compiler-authored repair exists only for exactly one `from` event; several are ambiguous. Review the specification repair individually; no fix-all or pinned evidence. |
+
+Requires Screenplay 4.171.0 or later (`screenplay --version`) for PLAY0700/0701
+and event delivery to captures; older runners do not execute that delivery.
+Requires Screenplay 4.176.0 or later for PLAY0694; older compilers leave the
+legacy directionless co-location unchecked. Full capture execution and ordering:
+automations-and-translations `references/public-events-and-direction.md`.
+
 ## Explicit enum member numbers
 
-Source errors from Screenplay 4.137.0; ESM v12 admission from 4.139.0:
+Source errors; the pins bind as ESM v12:
 
 | Code | Severity | Meaning / fix |
 | --- | --- | --- |
@@ -96,8 +113,22 @@ Source errors from Screenplay 4.137.0; ESM v12 admission from 4.139.0:
 Numbering errors have no automatic repair. PLAY0671 suggests the opt-in
 `propose-number-enum-members` refactoring, not a correctness repair. Member names
 remain specification values. Non-positional pins select v12; positional pins keep
-older executable bytes/version. Consumer admission is separate (`versions.md`).
-Source: `v4.139.0:Documentation/screenplay/diagnostics.md`, decision 0065.
+older executable bytes/version. Consumer admission is separate.
+
+## Reserved stored names and event pins
+
+| Code | Layer / severity | Meaning / fix |
+| --- | --- | --- |
+| PLAY0802 | Authoring error (`ReservedStoredName`) | A stored event-source name exactly `Default`, or stored event-stream name exactly `All`, is reserved; the stored name is the `id` pin when present, else the declaration name. Rename the stream with discovered `propose-rename`; keeping `id "All"` cannot fix it, while a pin away from the reserved name (`stream All` with `id "Archive"`) is valid. Comparison is ordinal: streams `all`, `ALL` and `Default` remain valid. Old `All` events read as source-only appends; moving history needs a Chronicle migration, not a language repair. Requires Screenplay 4.213.3 (`screenplay --version`); earlier compilers report these names only at binding, as PLAY0273. |
+| PLAY0273 | Binding error | Executable binding keeps refusing a stored source `Default` or stored stream `All` (name or `id "All"` pin) as a backstop to PLAY0802. |
+| PLAY0472 | Binding error | An event pin is not a valid event-name identifier, effective stored names differ across generations, or two events share a stored name. Use a valid, application-unique stored name shared by all generations; never rename stored history merely to hide the error. |
+| PLAY0686 | Retired | Differing event pins travel as `storedName` in ESM v16. MCP's compatibility `eventPinWarnings` array is empty. Renderer admission is separate: a renderer that does not admit v16 must refuse the model rather than render it under the new name. |
+
+PLAY0802 appears in authoring diagnostics and MCP readiness; match its reserved-name
+message before choosing the rename. It adds no ESM version.
+Source/stream pins already travel in ESM v8; differing event pins require v16.
+Equal-name event pins are no-ops; PLAY0471 removal preserves canonical bytes.
+Target evidence: a renderer must admit ESM v16 and preserve `storedName`, or refuse it.
 
 ## Named keys, production routes and observer filters
 
@@ -111,17 +142,53 @@ Source: `v4.139.0:Documentation/screenplay/diagnostics.md`, decision 0065.
 | PLAY0665 | E | Invalid/duplicate/child-bearing/unresolved source/stream filter or filtered reaction with a non-event trigger |
 | PLAY0666 | W | Filter excludes all statically known effective producer routes; C# only, handlers/foreign origins suppress it |
 
-Queries and trigger reads have no PLAY0661 repair. Composite view keys, query
-blocks and their fixtures remain PLAY0268 (#599), while one explicit key binds
-byte-identically to inference. Fixtures missing any part report PLAY0351.
+Queries and trigger reads have no PLAY0661 repair. Flat composite view keys bind as v27;
+projection or removal key blocks missing a part report PLAY0661 and bad parts PLAY0662.
+One explicit key binds byte-identically to inference. Fixtures missing any part
+report PLAY0351. Joins, children, `every`, `all`, `nested`, `variant`, reducers and
+list-query `by` blocks over a composite-keyed view are PLAY0268.
 Overrides/filters select released ESM v10; malformed routes also use PLAY0504.
 Read read-surface `references/named-keys.md` and
 [production routes and filters](production-routes-and-filters.md).
 
-## Caller identity, compliance and routes
+## Ambiguous match patterns (PLAY0803)
 
-Source authority: v4.127.0 `diagnostics.md`, `identity.md`, `concepts.md`,
-`purposes.md`, `events.md`, `event-sources.md`, `reactions.md`.
+Requires Screenplay 4.218.2 (`screenplay --version`); older compilers do not report it.
+
+| Code | Severity | Meaning / fix |
+| --- | --- | --- |
+| PLAY0803 | W | `AmbiguousMatchPattern`: a `matches` pattern in the portable dialect, such as `(a+)+$`, `(a\|a)*` or `(a*)*`, can backtrack exponentially in a browser engine. Reported by both compilers and editors with the ambiguous subexpression; very large patterns are not analyzed. Rewrite it unambiguously (`a+`, `[ab]*`); see command-surface `text-and-match-rules.md`. |
+
+## Projection event scope (PLAY0801)
+
+Requires Screenplay 4.212.3 (`screenplay --version`) for this ordinary compilation
+check in both C# and TypeScript; older executable binding rejected these duplicate
+uses later with PLAY0273.
+
+| Code | Severity | Meaning / fix |
+| --- | --- | --- |
+| PLAY0801 | E | `DuplicateEventInProjectionScope`: an event name occurs more than once in one projection level's event set or separate join set. Reports the second and each later reference, even with identical or different keys. Combine same-row mappings into one block; one event cannot update two rows of that level through two `from` blocks. |
+
+A level is the root, one `children` block, one `nested` block or one variant.
+`from` (including each event in `from A, B` lists), `remove with`, `remove via join`
+and `clear with` share one set of event names. `join` events have their own set:
+once in `from` and once in a join is allowed. Each children, nested and variant
+block starts fresh sets; separate projections are independent. Names compare
+ordinally without resolving qualifications or generations. If the domain has a
+genuine second fact, model it as its own event; never invent events only to
+satisfy the read side. Full scope guidance: projections `references/pdl-grammar.md`.
+
+## Reducer instance identity (PLAY0690)
+
+| Code | Severity | Meaning / fix |
+| --- | --- | --- |
+| PLAY0690 | W | A reducer instance is keyed by the event-source id, so a reducer-backed scalar query `by` another nominal type, or a reducer whose complete producers use several identity types, warns. Reducers cannot be re-keyed: use a projection with a property key on each `from`, or a join for existing instances |
+
+Fails `--warnaserror`. Compares declared nominal types only where producers are known (command `for`, implicit or generated identifiers, reaction `for`); plain `produces` without `for`, reactions without `for`, captures, seeds and code are not compared. Native C# only: a clean editor proves nothing. Example and limits: projections [reducer identity](../../cratis-screenplay-projections/references/reducer-identity.md).
+
+Requires Screenplay 4.170.0 or later (`screenplay --version`); an older compiler does not report it, and `cratis screenplay validate` reports it only when its bundled compiler is that new.
+
+## Caller identity, compliance and routes
 
 | Code | Severity | Meaning / fix |
 | --- | --- | --- |
@@ -173,10 +240,8 @@ escapes `%`/`|`, not an inferred split of legacy text.
 
 Identity declarations and event `subject` are metadata; reading a declared
 `$identity` detail in executable clauses is PLAY0268. `runs as` is admitted as
-ESM v10 in the current standalone, not a current PLAY0268 gap. At standalone
-4.142.0, concept compliance binds as v13 (since 4.141.0); enum/identity compliance and protected
-events with explicit subject marks still refuse PLAY0268. CLI 3.57.0's 4.147.1
-bundle also binds concept compliance; purpose metadata is PLAY0270. See command-surface
+ESM v10, not a PLAY0268 gap. Concept compliance binds as v13; enum/identity compliance and protected
+events with explicit subject marks still refuse PLAY0268. Purpose metadata is PLAY0270. See command-surface
 `references/compliance.md` and `references/context.md` for syntax and limits.
 
 `screenplay_repair_capabilities` and `propose-repair` advertise PLAY0653: a
@@ -185,8 +250,6 @@ repair evidence. PLAY0565 supports one discovered `line` or a document-root
 migration. Preview every repair; legal notes never move automatically.
 
 ## Specification metadata, callers, cases and locators
-
-Authority: Screenplay v4.127.0 `diagnostics.md`, `specifications.md`, `slices.md`.
 
 | Code | Severity | Meaning / fix |
 | --- | --- | --- |
@@ -213,7 +276,7 @@ Authority: Screenplay v4.127.0 `diagnostics.md`, `specifications.md`, `slices.md
 
 Descriptions/documentation are report-only PLAY0270, not executable conditions.
 Case tables and persona callers expand before binding without a new ESM version.
-Routes do not make redelivery executable: it still reports PLAY0268.
+Routes do not by themselves select v17: redelivery executes as v17 (Requires Screenplay 4.157.0), and older compilers report PLAY0268 for it.
 
 ## Guarded interaction diagnostics
 
@@ -229,6 +292,26 @@ PLAY0563/0564 repairs need individual review and canonical formatting, refuse
 comment loss and do not support pinned evidence. TypeScript diagnoses but does
 not offer these repairs. Preview through MCP `propose-repair`, never text-patch
 around a refusal. Condition/subject errors also use guarded-action PLAY0341–0348.
+
+## UI profile shell: root template, options, appearance
+
+Requires Screenplay 4.200.0 or later (`screenplay --version`); 4.197.0 reads the syntax without the checks. The fix for each is in
+`../../cratis-screenplay-ui-composition/references/ui-profile-and-theme.md`.
+
+| Code | Severity | Meaning / fix |
+| --- | --- | --- |
+| PLAY0788 | E | A `root template` / `new screens use template` line is malformed, or pins a version on an own template. |
+| PLAY0789 | E | A malformed or repeated `identity` or `appearance` line, or a second `identity` or `appearance` block. |
+| PLAY0790 | E | The template is not declared (or the blueprint does not ship it). Declare it or take it from a blueprint. |
+| PLAY0791 | W | The profile selects its shell with the legacy `layout <Name>`. Write `root template <Name>`; the quick fix rewrites it (or removes the ignored line beside a `root template`). |
+| PLAY0792 | E | The blueprint is not in the profile's `packages` (or not installed). |
+| PLAY0793 | W | The pinned `version` range is not satisfied by the installed blueprint (catalog hosts only). |
+| PLAY0794 | E | The root template cannot be the shell (not a layout or application-scope template, fits a slot, `scopes` without `application`). |
+| PLAY0795 | E | The root template has no `content` slot. |
+| PLAY0796 | W | An `option` the shell does not expose. |
+| PLAY0797 | E | Color scheme is not `light`, `dark` or `system`, the accent is not a hex colour, the corners are not `sharp`, `default` or `round`, or an `identity` value is outside Scene's rules (initials longer than 2, unknown icon, image that is not a PNG/JPG/SVG/WebP data URI of at most 400 KB). |
+| PLAY0798 | E | More than one `root template` in a profile. |
+| PLAY0799 | E | `new screens use template` cannot start a screen in a feature. |
 
 ## Structural completeness and timeline checks
 
@@ -246,6 +329,17 @@ as errors if gating. Ordinary compile success does not imply these ran:
 | privilege | PLAY0652 | Elevated event-trigger producers must require every actor role; opaque gates are information, clock/application triggers exempt |
 | purposes | PLAY0602–0606 | Personal-data coverage, special/criminal safeguards, basis and unused-purpose prompts; union of ancestor/direct references |
 | personas | PLAY0574–0576 | Unused personas, unreachable gates and ambiguous buildable policy alternatives; unsynthesizable/undecidable is unknown |
+
+For `query-keys` (PLAY0535), a collection `by` can match a same-named compatible
+read-model field or composite key part, or the identity. A single-result `by`
+still matches the identity, not an arbitrary field. Parameter optionality is
+ignored for compatibility; `optional` alone does not establish a match. Identity
+inference uses only single-result keyed queries, not collection queries, with
+structurally resolved projection keys as fallback. Performer-served views,
+tenant-context parameters and unknown identity types are skipped.
+Requires Screenplay 4.212.1 (`screenplay --version`) for this check alignment;
+older tools can warn on valid collection fields or optional parameters and infer
+identity from collection queries. Upgrade before using those warnings as a gate.
 
 Whole-source errors skip completeness checks. Unknown/opaque coverage is not
 invented: report skipped status/coverage and walk field lineage manually.
@@ -268,12 +362,11 @@ identity details (0633–0646), compliance/subject checks, reaction identity
 A shared catalog code is not proof that a check is implemented in both compilers.
 
 C# CLI/MCP owns whole-application scoped diagnostics, opt-in completeness
-(including PLAY0530–0537, PLAY0602–0606 and PLAY0652), bound reaction gate
-checks PLAY0650/0651, semantic binding and PLAY0546 (a negated claim targets optional,
+(including PLAY0530–0537, PLAY0602–0606 and PLAY0652), reducer identity
+PLAY0690, bound reaction gate checks PLAY0650/0651, semantic binding and PLAY0546 (a negated claim targets optional,
 unavailable-subject or non-text data). The VS Code repair bridge is not a general
 C# validator. A clean editor is not V1 for the complete application, V3 binding
-or V4 execution. Run the CLI or MCP for those verdicts. Authority:
-`v4.127.0:Documentation/screenplay/editor-diagnostics.md`, `diagnostics.md`.
+or V4 execution. Run the CLI or MCP for those verdicts.
 
 ## Consistency errors (V1: the model contradicts itself)
 | Code | Meaning |
@@ -281,27 +374,71 @@ or V4 execution. Run the CLI or MCP for those verdicts. Authority:
 | PLAY0282 | `validate` rule targets a field absent from the command |
 | PLAY0283 | `reads View by field` type matches no `by` param of the view's queries |
 | PLAY0284 | `children`/`nested` never populates a declared element field |
-| PLAY0285 | a spec's `then` event contradicts every possible declared producer of its `when` command (decidable literals, property copies, equality conditions). Fix the model or the spec deliberately. **False positive** on reaction cascades with the compiler bundled in cratis before 3.28.2 (4.60.1; cli#242; reachability through reactions and `invokes` was added later); gone in 4.66.0 and cratis 3.28.2 (probed). On an older bundle confirm with the standalone tool, record a tool gap, do not "fix" a correct model |
+| PLAY0285 | a spec's `then` event contradicts every possible declared producer of its `when` command (decidable literals, property copies, equality conditions). Fix the model or the spec deliberately. **False positive** on reaction cascades with an older bundled compiler. On an older bundle confirm with the standalone tool, record a tool gap, do not "fix" a correct model |
 | PLAY0286 | spec value is not a member of the enum |
 | PLAY0287 | producer/capture/spec assigns a field the event lacks |
 | PLAY0291-0294 | bad single-line JSON / unknown key / wrong shape / duplicate key |
 
+## Batches, described handlers, text rules and protected reads
+
+Use code and typed subjects from [diagnostic arguments](diagnostic-arguments.md), not
+message parsing, for codes that declare arguments. Other messages still explain
+refusal reasons. Read [language admission](language-admission.md) before changing modes.
+
+| Code | Meaning / fix |
+| --- | --- |
+| PLAY0693 | Duplicate/conflicting/invalid atomic batch declaration; keep one application-root declaration, do not remove intended atomicity |
+| PLAY0695 (I) | Described handler admitted; a target must supply its payload body |
+| PLAY0696 | Pending handler without productions, including response-only; declare unconditional productions |
+| PLAY0697 | Conditional productions under pending intent; result v1 needs unconditional events |
+| PLAY0698 | Pending intent plus another handler; retain one |
+| PLAY0699 | Pattern outside portable dialect or over 1,000 UTF-16 units / 3,000 expanded nodes; rewrite the refused construct |
+| PLAY0780 | Invalid placement/repetition of `command reads protected`; declare once at root |
+| PLAY0781 | Protected read shape/key refused; read the typed `reason` argument (see `diagnostic-arguments.md` for the compiler prerequisite), never downgrade to an unguarded read |
+| PLAY0782 | Omitted `by` without command identifier; declare the lookup input |
+| PLAY0783 | Command combines reads and concurrency; choose the intended boundary |
+| PLAY0784 | Unknown read/property path; reference a declared read or alias |
+| PLAY0785 | Ambiguous view path; use distinct aliases on repeated reads |
+| PLAY0786 (I) | Eligible legacy model; preview typed preamble repair, individually review absence/conflict semantics |
+| PLAY0787 (W) | Exact deprecated Studio text-rule pattern; repair to literal rule or equality, preserving message/severity |
+| STAGE-ESM-043 | Atomic mode not realized in admitted v22–v27; retain declaration and gap-fill (v22 admission Requires Stage 4.139.0; older Stage reports -016) |
+| STAGE-ESM-047 | Single-instance query by composite key parts (v27) in the renderer, until Chronicle can look up composite keys (Chronicle#4265); keep the query, gap-fill |
+| STAGE-ESM-048 | Read model with several key parts, or projection keyed by parts (v27), in the renderer or legacy syntax engine; keep the model, gap-fill |
+| STAGE-ESM-044 | Renderer refuses a protected read despite v25 admission: any protected read in a bundle that predates protected-read rendering, afterwards only shapes it cannot preserve (constrained events, read paths in `produces when`, optional/collection/composite/mistyped mapping targets, freshness scopes), naming the reason; the legacy Host/structural runner refuse the preamble. Semantic Host/executor support is separate; keep protection and gap-fill generated-app scope |
+| STAGE-ESM-045 | Non-Error protected requirement; semantic Host/executor refuse before execution, including reaction-invoked commands; keep severity and report Unsupported |
+| STAGE-IMPL-002 | Described handler body not realized by Stage, even Stub mode; no stubs emitted |
+| STAGE-IMPL-003 | Reached reducer or command/concept validation body in semantic Host/executor; owner and RequirementId named, unrelated behavior remains admitted (Requires Stage 4.145.0; older engines refuse unrelated behavior too) |
+| STAGE-PROFILE-001 to -006 | Shared target profile-input findings: unknown package, missing layout, incompatible packages, missing theme, invalid root template, unresolved blueprint template (Requires Stage 4.143.0; older consumers may check only in the CLI) |
+
+Invalid match syntax remains PLAY0367. Property/concept text rules bind v24;
+`contains`/`starts with` in conditions only still fail PLAY0268. Stage rejects
+v28 and mixed pairs with STAGE-ESM-016; v1–v27 admission does not implement
+bodies or batches. The renderer refuses protected reads it cannot preserve (STAGE-ESM-044; every
+protected read in an older bundle), unsupported date-comparison shapes (STAGE-ESM-046;
+all date comparisons before Stage 4.141.0) and composite read-model keys (STAGE-ESM-048/-047).
+Read [language admission](language-admission.md) for Host outside-append commit behavior.
+Requires Stage 4.129.0 for semantic Host/executor protected reads; older engines refuse -044.
+
 ## Binding (V2 and V3) - see `executable-subset.md` for the full table
+
+Requires Screenplay 4.210.0 (`screenplay --version`) for PLAY0800 and its required typed `subject`; older binders attribute attached command handlers to PLAY0268. Other PLAY0268 refusal families are unchanged.
+
 | Code | Meaning | Fix |
 |---|---|---|
-| PLAY0268 | construct the ESM cannot represent; read the message for the construct (`executable-subset.md` lists the common ones: handler, list or observable query, `pii`, `produces when` over read models, v6 constructs on cratis before 3.28.2) | stay in design mode, or change the construct if the domain allows; never strip `pii`/authorization |
+| PLAY0268 | construct not representable in a supported ESM version yet (`executable-subset.md` lists unsupported query shapes, protected enum/identity concepts, read paths without opt-in or in `produces when`, Uuid ordering, different Uuid concepts and Uuid rules, and older bundled-compiler limits) | stay in design mode, or change the construct if the domain allows; never strip `pii`/authorization |
+| PLAY0800 | error `CommandHandlerRequiresAttachment`: a file/inline command handler requires a constrained implementation attachment; required typed `subject` identifies the command | permanent limitation: gap-fill the slice in code, not by waiting for ESM admission; hosts switch on the code and read `arguments.subject`, never match the message |
 | PLAY0269 / 0270 | UI deferred / authoring metadata (I) | none |
-| PLAY0271 | legacy `reads` or a `concurrency` block keeps its legacy meaning and cannot bind (error) | design gap; a constraint for uniqueness; protected decisions are a target requirement |
-| PLAY0273 | incoherent: ambiguous `for`, property not on event revision, operand type mismatch, derived `$eventContext` path | fix the reference |
+| PLAY0271 | legacy `reads` or a `concurrency` block keeps its legacy meaning and cannot bind (error) | opt eligible command reads into v25 with reviewed preamble repair; `concurrency` remains unbound; uniqueness uses a constraint, target realization stays separate |
+| PLAY0273 | incoherent: ambiguous `for`, property not on event revision, operand type mismatch, derived `$eventContext` path, unparsable date literal or offset-less DateTime literal in an admitted v26 comparison, or a Uuid comparison literal that is not lowercase hyphenated (v28) | fix the reference or literal; DateTime needs offset/Z; Uuid literals are lowercase hyphenated |
 | PLAY0350 | `null` in command/event value | Chronicle semantics (nullable event properties are CHR0012; an optional fact is a separate event), not only a binder limitation: specs cannot state an absent command/event value. Omit the value or record a capability gap; whether the optional detail is really a separate fact is a review question, not this code's fix |
 | PLAY0351 | given/then readmodel lacks the key property | add the keyed query's `by` property |
-| PLAY0352 | when-less spec asserting events/errors | add a `when` or assert readmodel/query |
+| PLAY0352 | when-less spec asserting an action outcome, except a sole query Validation error (v18) | add an action or assert readmodel/query |
 | PLAY0389 | gated command/query exercised without `given caller` | add `given caller` (empty block = anonymous) |
 
 ## Frequent errors
 | Code | Meaning / fix |
 |---|---|
-| PLAY0001 | unknown top-level word (e.g. `slice` at top level of an un-imported file; `numbers` on a compiler older than 4.64.0) |
+| PLAY0001 | unknown top-level word (e.g. `slice` at top level of an un-imported file; `numbers` on an older compiler) |
 | PLAY0007 | a `concept` line is not `concept <Name> : <Type>` |
 | PLAY0042 | a `produces` line is neither `produces <EventType>` nor `produces when <condition>` (the event goes on its own line and `for` on the line below) |
 | PLAY0048 | a query body line opens with a word a query does not declare by (for example `observable` as a body line; it belongs in the return position) |
@@ -321,6 +458,7 @@ or V4 execution. Run the CLI or MCP for those verdicts. Authority:
 | PLAY0410/0411/0412 | same view read twice / duplicate alias / alias collision |
 | PLAY0453 | `then no readmodel` needs `RM for "<key>"` |
 | PLAY0461 | clock instant not ISO 8601 with `Z`/offset |
+| PLAY0465 | query action needs result/no-result/denial or one Validation error; a query error cannot mix with results/no-result/denial or more than one query |
 | PLAY0468 | `when query` argument is not a `by`/`filter` param |
 | PLAY0474 | `produces event` (inline) outside a command, e.g. in a reaction |
 | PLAY0478 (I) | plain `produces` without `for`: add `for <identifier>` |
@@ -329,36 +467,55 @@ or V4 execution. Run the CLI or MCP for those verdicts. Authority:
 | PLAY0480/0484 | modifier order `Type optional generated identifier` |
 | PLAY0682 | `generate sequence` is reserved; keep the intended sequence as a capability gap |
 | PLAY0683/0684 | PLAY0683: generated non-identifier below 64 random bits warns (a single-property unique constraint suppresses it); PLAY0684: generated identifier below 64 random bits is an error |
-| PLAY0685 | own response name used under execute failure; outer successful responses remain available. Screenplay 4.148.0, UI composition `references/response-continuations.md` |
+| PLAY0687 | capture `source events` spans multiple origins; split into one capture per origin (event store) |
+| PLAY0688 | generated strategy refutes a concept rule; read its violating example, align the rule/strategy or review the derived-`matches` repair |
+| PLAY0689 (W) | generated-concept rule proof is undecided; reason names regex fragment/budget/opaque limits or ambiguity. Only deterministic matches patterns prove containment; passing samples prove nothing |
+| PLAY0691 | finite pattern support cannot be counted within the generation budget; simplify the strategy, never treat it as an Unproven rule warning or redraw |
+| PLAY0692 | pattern support is empty for some valid UTC date in the compiler's next-100-year horizon; repair the pattern/checksum contract, never sample around it |
+| PLAY0685 | own response name used under execute failure; outer successful responses remain available. UI composition `references/response-continuations.md` |
 | PLAY0289 | (binding) no documents: empty root |
+
+Requires Screenplay 4.164.0 (`screenplay --version`) for PLAY0688/0689 (ESM v20),
+4.172.0 for finite generation PLAY0691/0692 and checksum validation (v21); older
+compilers refuse those constructs with PLAY0268. A refuted rule's PLAY0688 repair
+uses the strategy-derived matches pattern (and declared checksum validation if
+absent). Inspect MCP `rules[]` for status/witness/reason and only use a repair
+when diagnosticCode/repair is reported. Pattern/random/rule no longer refuse
+PLAY0268; generated secrets still do. Requires Stage 4.109.0 for v20, 4.115.0
+for v21 admission/all-Proven unpinned specs, 4.117.0 for warning/info rules,
+4.118.0 for checksum validation and 4.119.0 for pattern/random. Older renderers
+refuse those constructs or require pins even for Proven rules. Bad pins fail
+STAGE-ESM-011; unpinned Unproven/Refuted rules fail -038; opaque rules fail -005
+before pin evaluation. `generate rule` renders in a new enough bundle (bodies refuse -019/-022/-020; the Host and legacy syntax engine keep -028); checksum remains -042 only
+on legacy syntax paths. Tool-author checks: [generation checks](generation-checks.md).
 
 Fix order: E at V1 -> W at V1 -> silent-gap check -> V2 codes (if the mode needs V3).
 Report each as `code file:line one-line meaning`; never paste more than about 30 lines.
 
 ## Render admission (V5): `STAGE-*`, `CLI-RENDER-*`, `STAGE-CRATIS-*`
-Full table with causes: `renderable-subset.md`. The Stage 4.24.x rows below
-retain historical source/probe evidence. The pinned CLI/Stage pair (`versions.md`) admits
-through v15 to construct checks; above it is CLI-RENDER-004 (direct Stage:
-STAGE-ESM-016). Publication STAGE-ESM-032, foreign facts/event captures 033,
-claim-reading/opaque reaction gates 034, legacy filters 035 and production overrides 036 remain
-refused; reducer filters render. Previous CLI 3.46.1 admitted through v7; its
-v7 corpus received STAGE-ESM-028/029, not the older v7 version gate.
-Codes in the historical snapshot:
+Full table with causes: `renderable-subset.md`. The bundled renderer admits through a fixed
+ESM version to construct checks; above it is CLI-RENDER-004 (direct Stage: STAGE-ESM-016).
+Publication STAGE-ESM-032, foreign facts/event captures 033, claim-reading/opaque reaction gates
+034, legacy filters 035 and production overrides 036 remain refused; reducer filters render.
+
 | Code | Meaning |
 |---|---|
-| STAGE-ESM-016 | model above the admitted ESM schema (v4 on Stage 4.24.2: v5 absence and v6 constructs; 4.24.1 admitted v3, so a v4 model with generations was refused): whole model refused |
-| STAGE-ESM-025 | Stage 4.24.2: a typed-context member references a historical event revision or property identity; only the current revision renders |
-| STAGE-ESM-026 | Stage 4.24.2: a selected event, or an event a selected scope depends on, is above its initial revision; Stage cannot render event-type migrations yet (Stage#204, needs Screenplay#71); gap-fill and hand-write the migrations |
-| STAGE-ESM-024 | ledger-only (Stage 4.24.1 and later): the ESM v6 members are dispositioned Rejected; a v6 model is still refused whole by STAGE-ESM-016, so this is not the code a user sees |
-| CLI-RENDER-003 | historical: reported by cratis 3.28.2 for an ESM v4 model with generations; not emitted since 3.28.3, which reports an evolved event with `STAGE-ESM-026` |
-| STAGE-ESM-001 | slice kind is not `StateChange`/`StateView` (Automation, Translate: Stage#79) |
-| STAGE-ESM-004 / 006 / 013 | more than one command per `StateChange`; conditional or value-expression production; other context value |
-| STAGE-ESM-005 / 015 | code rule or code validation; opaque policy or an ownership claim against a Uuid-backed target |
-| STAGE-ESM-007 / 009 / 010 / 017 | projection shape (one per read model, cardinality, query delivery, keys, `all`, event-context values) |
-| STAGE-ESM-011 | specification shape not rendered (`when append`, `then no readmodel`, composite values) |
-| STAGE-ESM-014 | constraint shape (multi-claim in one command, intra-command multi-event change) |
-| STAGE-ESM-019/022 | reducer body outside the pure allowlist |
-| STAGE-ESM-020 | a body the model requires is missing or changed (content hash check); blocks publication |
+| STAGE-ESM-016 | model above the admitted ESM schema: whole model refused |
+| STAGE-ESM-025 | a typed-context member references a historical event revision or property identity; only the current revision renders |
+| STAGE-ESM-026 | a selected event, or an event a selected scope depends on, is above its initial revision; Stage cannot render event-type migrations; gap-fill and hand-write the migrations |
+| STAGE-ESM-001 | unsupported slice kind; `StateChange`, `StateView` and event-triggered `Automation` render, Translate is STAGE-ESM-024 |
+| STAGE-ESM-004 / 006 / 013 | a `StateChange` without commands; `produces` that cannot render (expression/enum conditions, literal or computed mappings, duplicate tags); event-context value other than `$context.occurred` (reactions: `$context.causedBy.*`, `$context.eventSourceId`) |
+| STAGE-ESM-005 / 015 | code rule or code validation bodies; authorization Stage cannot render exactly (role-claim URIs, nested or unresolved opaque policies, opaque-policy subjects that are not text, Uuid, Date or DateTime). Role-only, authenticated, opaque pure policies and Uuid/Date/DateTime/text claim targets render |
+| STAGE-ESM-007 / 009 / 010 / 017 | projection shape (one projection or reducer per read model, affected-instance key, unsupported query shapes, keys, unsupported `all` mappings, event-context values) |
+| STAGE-ESM-011 | specification shape not rendered (`when append` outside the single-hop reaction subset, command specifications that cascade into reactions, composite values, an unauthenticated caller carrying roles or claims, generated fixtures that do not match their strategy shape or concept rules). Command scenarios and single-hop reaction appends render |
+| STAGE-ESM-014 | constraint shape (multi-claim in one command, optional or composite targets) |
+| STAGE-ESM-019/022 | reducer or opaque pure policy body outside the pure allowlist; a `generate rule` body that does not compile or warns (019) or shadows a type or namespace (022) |
+| STAGE-ESM-024 | interval, schedule, application, startup and shutdown triggers, opaque reaction bodies, captures, Translate, clock/trigger/capture specifications |
+| STAGE-ESM-020 | a body the model requires, including a `generate rule` attachment, is missing or changed (content hash check); blocks publication |
+| STAGE-ESM-039 | unsupported refusal branch conditions/routes/mappings, same-event multi-trigger refusal groups, localized `$refusal.message` or ambiguous multi-constraint `$refusal.constraint` |
+| STAGE-EVENT-002 / CLI-RENDER-016 | existing destination event type ids changed or unreadable; pin stored identity, never bypass with `--force` |
+| STAGE-BASELINE-001–004 | whole-application warnings: changed/missing admitted event revision, unreadable baseline, unavailable or stale assessment; keep `baseline check` as the independent CI gate |
+| CLI-RENDER-017 / 018 | persisted PATH root cannot open / `--name` differs from saved application name; resolve root state, never discard identities |
 | STAGE-CRATIS-005 | a modeled artifact would render into `Customizations/` |
 Fix by changing the model only where the domain allows it; otherwise the slice is gap-fill
 with the model as its contract (`cratis-screenplay-render-and-gap-fill`).

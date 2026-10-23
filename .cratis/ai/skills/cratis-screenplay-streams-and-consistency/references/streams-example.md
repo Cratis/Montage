@@ -1,15 +1,22 @@
 <!-- cratis-ai-managed: skills/cratis-screenplay-streams-and-consistency/references/streams-example.md -->
 # Example: streams, constraints and a recorded rule
 
+Legacy control: no `command reads protected` preamble is declared. The course-capacity
+payload-key fan-in remains refused even with opt-in; eligible active-enrolment reads
+can protect under v25, but reads plus concurrency cannot combine (PLAY0783). Read
+[protected reads](../../cratis-screenplay-command-surface/references/protected-reads.md)
+for admission and protected-read rendering (Stage 4.138.0; STAGE-ESM-044 otherwise). The legacy diagnostics below describe this
+control, not a blanket refusal of command reads.
+
 A complete design-mode model for course enrolment. It shows one business identity per stream,
 cross-stream references as payload, three kinds of uniqueness constraint, a state-dependent
 rule recorded as **NOT enforced in the model today**, a declared `concurrency` scope, and an
 active-state view with removal. Read it with `consistency-and-concurrency.md` (sections 1-4).
 
-The model compiles at 4.127.0 (V1, warnings as errors) but is not binding-ready by design:
+The model compiles (V1, warnings as errors) but is not binding-ready by design:
 `reads` and the `concurrency` block are PLAY0271, and `require` over a view is PLAY0268.
 The `pii` concept failed binding on that compiler and still fails on the pinned CLI,
-but binds as v13 on standalone 4.142.0 (since 4.141.0). Keep those lines: they state real intent.
+but binds as v13 on standalone 4.142.0. Keep those lines: they state real intent.
 
 ```screenplay expect PLAY0516 test=unbound
 // cratis-screenplay-streams-and-consistency: complete design-mode example (V1 with --warnings-as-errors).

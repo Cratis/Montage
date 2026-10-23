@@ -10,16 +10,17 @@
 - Render revision drift
 - Tool-version gaps
 - Modes
+- Reporting the verdicts
 
 Exact commands, exit codes, admitted subsets and every version-specific fact live in
-`cratis-screenplay-toolchain` (`references/versions.md` and its subset references). This file
+`cratis-screenplay-toolchain` (`SKILL.md` and its subset references). This file
 defines what each result means and how to report it. Do not copy version facts here.
 
 ## Five independent results
 
 | Result | Evidence | Does NOT prove |
 |---|---|---|
-| V1 authorable | folder-mode validate with warnings as errors. The standalone compiler includes imports in folder and file mode; `cratis` CLI 3.28.2 file validation ignored imports (cli#244, probed); since 3.28.4 (PR #258) it compiles the file with its imports, but folder mode stays the recommended cross-tool check | semantics, binding, specs |
+| V1 authorable | folder-mode validate with warnings as errors. The standalone compiler includes imports in folder and file mode; an older `cratis` CLI file validation ignored imports; a current CLI compiles the file with its imports, but folder mode stays the recommended cross-tool check | semantics, binding, specs |
 | V2 executable diagnostics | the executable model reports no diagnostics for the scope | that any spec runs or passes |
 | V3 binding-ready | the model binds to the executable semantic model | that any spec runs or passes |
 | V4 reference specs run | the reference execution route only: engine, and per `.play` specification passed / failed / unsupported (overall model may be unbound) | rendering, generated code, build or target tests |
@@ -48,6 +49,11 @@ V5 rules:
 ## Commands (enough to check without loading the toolchain skill)
 - V1, preferred: `screenplay <model-folder> --warnaserror --no-color` (check "N file(s) compiled").
 - V1, fallback: `cratis screenplay validate <model-folder> --warnings-as-errors`.
+- The repository's gate file: V1 runs through a `screenplay.json` at the model root when one exists
+  (checks, warnings as errors, scope, open questions), so it is part of the verification contract.
+  Read the effective gate with `screenplay <model-folder> --print-gate`, name it on the V1 line, and
+  never bypass it with `--no-gate-file` without saying so. A refused file is `V1 not run: gate file
+  refused`, not a pass. Commands and precedence: toolchain `references/verdicts.md`.
 - V2, V3: the MCP workspace readiness and executable diagnostics.
 - Name tool and version on each line. A tool older than the model's constructs reports false
   failures; see the toolchain skill.
@@ -56,7 +62,7 @@ V5 rules:
 
 ```text
 Mode: executable   Source: <commit+digest from the source-identity helper> / ws <revision> cat <catalogRevision>
-V1 authorable:   pass (N files)                      | fail: PLAYnnnn at file:line - meaning
+V1 authorable:   pass (N files, gate: <screenplay.json or flags>) | fail: PLAYnnnn at file:line - meaning | not run: gate file refused
 V2 diagnostics:  none (executable model)             | n diagnostics | not run: <reason>
 V3 binding:      ready                               | blocked: PLAYnnnn ... | not run: design mode
 V4 specs:        12 expected / 12 discovered, 11 passed, 1 unsupported (route) | not run: no route
@@ -216,3 +222,10 @@ skill):
   `run-specifications`, obligations/smells and opt-in completeness are released
   at the toolchain pin; they do not prove full field lineage or target behavior.
   Check `cratis-screenplay-toolchain` before changing a verdict.
+
+## Reporting the verdicts
+
+Report all five at checkpoints and handoffs (between edit batches only those you ran), each a
+result or "not run: <reason>" naming tool and version. Never infer one from another or "fix" a
+correct model to silence a diagnostic (record a tool-version gap). Commands, report template,
+source identity: `references/verdicts-and-modes.md`. Read `references/verdicts-and-modes.md` before recording verdicts or establishing the source identity for acceptance.

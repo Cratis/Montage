@@ -1,10 +1,17 @@
 <!-- cratis-ai-managed: skills/cratis-screenplay-scenario-coverage/references/invoicing-dues-design.md -->
 # Invoicing and dues: design-mode document for the stored-state rules
 
-**Design mode, not binding-ready by design.** This document states the stored-state rules of the
+**Legacy control without `command reads protected`, not binding-ready by design.**
+Read [protected reads](../../cratis-screenplay-command-surface/references/protected-reads.md)
+for the opt-in alternative. Do not insert the preamble blindly: every read must meet
+finite event-source-keyed admission with removals. A v25 reference pass is not
+rendering: Stage admits v25 and renders protected reads from 4.138.0, and older bundles refuse them with STAGE-ESM-044. The comments and unenforced markers below describe
+this legacy control, not a general limit on command reads.
+
+**Design mode.** This document states the stored-state rules of the
 invoicing example as the skill requires (`reads <View>` + `require ... message`, marked NOT
 enforced in the slice `description`, target named). It compiles (V1, warnings as errors) but
-does not bind at Screenplay 4.66.0, and the only blockers are `reads` (PLAY0271) and `require` over
+does not bind, and the only blockers are `reads` (PLAY0271) and `require` over
 a view (PLAY0268), so no specification here runs (V3 blocked). `PaymentReceived` has its producer
 here (the capture and `ReceivedTranslator`), so nothing else blocks: with every `reads` and
 `require` line removed the document binds. The rules cover an unknown invoice, voiding a paid
@@ -18,7 +25,7 @@ The excerpt's Stage API-availability comment describes the historical Stage 4.24
 scaffold. Stage 4.73.1's scaffold pins an Arc/Chronicle set (see the Stage skill's `references/rendered-application.md`): protected-read APIs are
 available to gap-fill (the "not in a Stage-rendered application" comment in the source is
 superseded), not emitted protection or `.play` rule admission. The
-original compiled source is retained unchanged.
+capture uses separate first-sight/update appends, with its local-event follow-up in Automation.
 
 ```screenplay expect PLAY0516 test=unbound
 // Scenario coverage design-mode example: stored-state rules of invoicing club dues (complete document).
@@ -91,17 +98,24 @@ module Invoicing
             "C" => captured
             "D" => declined
         append PaymentGatewayResultReceived
+          when added
+            outcome = $.outcome
+            reason  = $.reason
+        append PaymentGatewayResultReceived
           when outcome
             outcome = $.outcome
             reason  = $.reason
+      event PaymentGatewayResultReceived
+        outcome GatewayOutcome
+        reason  String
+
+    slice Automation RecordPaymentOutcome
+      description "Gives PaymentReceived its producer: the translator reacts to the provider's external fact"
       reaction ReceivedTranslator
         when PaymentGatewayResultReceived
           outcome
           produces PaymentReceived
         where outcome == "captured"
-      event PaymentGatewayResultReceived
-        outcome GatewayOutcome
-        reason  String
       event PaymentReceived
 
     slice StateChange SettleOrVoidInvoice

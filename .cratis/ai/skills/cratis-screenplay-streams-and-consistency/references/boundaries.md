@@ -81,8 +81,8 @@ For each affected boundary, identify:
 
 Use declaration addresses, not copies of payloads. Per slice, also record the events it consumes
 and which slice produces them, for orientation, not as a build order. A command or reaction may
-consult another slice's view (`reads`; unprotected in `.play`, see `consistency-and-concurrency.md`
-section 3); a slice calls another slice's command only through `invokes`.
+consult another slice's view (`reads`; eligible commands opt into v25 protection,
+trigger reads cannot; see `consistency-and-concurrency.md` section 3 for target gaps); a slice calls another slice's command only through `invokes`.
 
 ### Responsibility matrix and ownership timeline
 One compact matrix per feature shows who owns what; the timeline shows where a fact crosses.
@@ -172,7 +172,7 @@ integration support.
 | Situation | Construct |
 |---|---|
 | another module in the same application | reference the event by name (cross-module resolution works within one application) |
-| another bounded context's contract | `event X from "store"` (shape declared locally, ESM v9); an unquoted `import Context.Event` or `import Q.X from "store"` has no local shape and stays PLAY0268 (see `versions.md` in `cratis-screenplay-toolchain`) |
+| another bounded context's contract | `event X from "store"` (shape declared locally, ESM v9); an unquoted `import Context.Event` or `import Q.X from "store"` has no local shape and stays PLAY0268 (see toolchain `references/executable-subset.md`) |
 | my own files | quoted `import "glob"` |
 | outside data entering | `Translate` slice: `capture`, or a translator `reaction` over an imported event (`cratis-screenplay-automations-and-translations`) |
 | our fact another context needs | a public summary event; the other side translates it into its own language |

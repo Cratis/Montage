@@ -15,11 +15,11 @@ over a list, use `DataPage.MenuItems` instead (see the
 
 ## Verified product sources
 
-| Package | Version | Verified from |
-| --- | --- | --- |
-| `@cratis/components` | `4.26.4` | its package manifest, `Source/Toolbar/*` (exports and props), `Documentation/Toolbar/*`, `Documentation/Common/icon.md` |
-| `react-icons` | `5.7.0` | dependency of `@cratis/components@4.26.4` — the icon source the examples use |
-| `react` | `^19.0.0` | peer of `@cratis/components@4.26.4` |
+| Package | Verified from |
+| --- | --- |
+| `@cratis/components` | its package manifest, `Source/Toolbar/*` (exports and props), `Documentation/Toolbar/*`, `Documentation/Common/icon.md` |
+| `react-icons` | dependency of `@cratis/components` — the icon source the examples use |
+| `react` | peer of `@cratis/components` |
 
 ## Import from the subpath
 
@@ -204,6 +204,10 @@ by rendering a named `ToolbarLayout`.
 consumer, ordered ascending by `order` (default `0`). `useToolbarSlot(slotName)`
 returns the current content for a custom consumer. `ToolbarContext` also accepts
 a `slotName`.
+
+In a Screenplay model the same idea is authored, not coded: a `feature` or `module` adds buttons to the `toolbar` slot of every
+screen beneath it and links each to a command of the feature (see `cratis-screenplay-ui-composition`, "Feature and module
+toolbars"). Use the slot components above only when writing the React application by hand.
 
 ## Props
 

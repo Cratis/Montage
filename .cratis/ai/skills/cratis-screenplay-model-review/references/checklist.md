@@ -53,8 +53,8 @@ not why: a signal, so confirm the hidden reason before reporting. The fix names 
 change (`BerthReassigned`, `BerthLengthLimitRaised`), one event per reason, each with its own
 rules and consumers. A shared payload shape alone is not a defect: full generations repeat the
 prior shape on purpose and different facts may look alike. Screenplay 4.127.0 MCP
-`find-modeling-smells` reports advisory questions (SMELL001–SMELL005) for generic
-names, duplicate shapes and wide flows. It supplements the sweep, never changes
+`find-modeling-smells` reports advisory questions (SMELL001–SMELL005; SMELL006 needs a newer server, see [MCP tools](../../cratis-screenplay-model-authoring/references/mcp-tools.md)) for generic
+names, duplicate shapes, wide flows and event properties nothing reads. It supplements the sweep, never changes
 a compiler verdict or proves a domain defect.
 
 ## Phase 2. Entity walk (5 checks, T1-T5; feeds F1-F3 and scenario coverage)
@@ -82,7 +82,7 @@ the format in `worked-example.md`.
 | A4 | Every command input ends in an event field or is used by a rule | `produces`, `validate`, `require` | Q (an unused input is often a missed fact) |
 | A5 | Every event has a consumer (view, reaction, constraint, external contract) or a stated terminal reason | MCP `dependencies direction=incoming` | Q |
 | A6 | Every declared view is read by a screen, a reaction or an external caller | screens `data ... via query`, reaction `reads` | Q |
-| A7 | Data called "missing" was searched for elsewhere in the model first | `search-declarations` | procedure |
+| A7 | Data called "missing" was searched for elsewhere in the model first (declaration names via search, properties via declaration details) | `search-declarations`, `declaration-details` | procedure |
 | A8 | Step contracts hold: what each step needs (precondition) is what the previous step's fact provides; each step's postcondition names the fact and its fields | slice order, event fields | D |
 
 ## Phase 4. Ownership and identity (6 checks, B1-B6)
@@ -124,7 +124,7 @@ the format in `worked-example.md`.
 |---|---|---|---|
 | E1 | Value formats on `concept`s; input rules on the command; uniqueness as `constraint`; access as `authorize` | declarations | D |
 | E2 | Every refusal has a message a person understands; constraint messages copied verbatim in specs | `message`, specs | D |
-| E3 | A state-dependent rule is `reads <View>` + `require <expr> message "..."` as stated intent, and the slice `description` marks it NOT enforced in the model today (PLAY0268/0271 at binding expected in design mode) with its target named (`[ProtectedDecision]` + `DecisionRead<T>`, Chronicle DCB / `concurrency` scope, or a constraint). Not: caller-supplied copies of state, attestation booleans (`confirmsX == true`), rules in `handler` / `implementation hint` prose, or `reads` treated as protection | slice `description`, `require`, `handler` | D (faking or hiding = major) |
+| E3 | A state-dependent rule uses `reads` + `require` over authoritative state: eligible reads opt into `command reads protected` (v25), with required absence and decide/commit conflict cases. Legacy/refused reads are marked unenforced with a named target. the Cratis renderer renders protected reads as Arc read protection once the CLI bundles a Stage that supports it (older bundles refuse them with STAGE-ESM-044; releases in command-surface `references/protected-reads.md`); reference/semantic-engine evidence is not generated-app protection. An ownership rule compares the caller with the stored owner (`require caller == Document.owner`, Uuid equality, same concept on both sides, Requires Screenplay 4.205.0, ESM v28; ordering and Uuid validation rules stay PLAY0268). Not: caller-supplied copies of state, attestation booleans (`confirmsX == true`), rules in `handler` / `implementation hint` prose, or `reads` treated as protection | slice `description`, `require`, `handler` | D (faking or hiding = major) |
 | E4 | `severity warning` is not used as "soft" validation (it still rejects) | validate lines | C semantics |
 | E5 | Preconditions are explicit; nothing relies on "obviously you can't" | descriptions, specs | Q |
 | E6 | Each invariant has an atomic enforcement point (name the storage provider where constraint admission matters); the race loser's outcome is specified | constraints, specs | D |
@@ -140,7 +140,7 @@ execution or prove a business deadlock. An ordering root is required; without
 one the folder check is skipped. A real F6 defect needs a named domain
 consequence, not just the diagram's cycle. Suggested graph order and safe
 PLAY0516 moves preserve executable bytes/identities. Source: Screenplay
-`v4.125.0:Documentation/screenplay/imports.md`, `diagnostics.md`.
+`Documentation/screenplay/imports.md`, `diagnostics.md`.
 
 | Id | Check | Evidence | Tier |
 |---|---|---|---|
@@ -148,7 +148,7 @@ PLAY0516 moves preserve executable bytes/identities. Source: Screenplay
 | F2 | No impossible sequence (a fact that requires one that can never precede it) | constraints, specs | D |
 | F3 | Cancellation, failure and correction paths exist where the business has them | slices | Q |
 | F4 | Automations: trigger, todo/work item if work can be pending, a closing fact, retry and once-only story | reactions, views | D (`cratis-screenplay-automations-and-translations`) |
-| F5 | External facts enter through `Translate`; in-app follow-ups through `Automation` | slice kinds | C semantics |
+| F5 | External facts enter through `Translate`; in-app follow-ups through separate `Automation` slices. Keep a capture in Translate, move reactions to its local appends out (PLAY0694 for directionless/unrouted co-location, including child/nested appends; PLAY0616 for explicit inbound). PLAY0694 is a warning that fails `--warnaserror`, with no automatic split | slice kinds, capture appends and reaction triggers | C semantics |
 | F6 | No cycle where fact A's reaction needs fact B and B's needs A, or two features each wait on the other | reactions, MCP `dependencies` | D (redesign the boundary) |
 | F7 | Each slice's consumed events and their producing slices are known; a slice calls another's command only through `invokes` | reactions, `reads` | Q |
 | F8 | Every Automation has a pending-work view (a todo list: membership is the pending work), or a written reason a direct effect needs none (immediate, internal, cannot fail). A "simple relay" is not exempt from the question | reactions, `reads`, views | D |
@@ -173,15 +173,15 @@ Nebulit (`provenance.md`).
 | G3 | Persona policy lists cover every gate on the path (module, feature, construct) | policies | C semantics (board placement) |
 | G4 | A command invoked by a reaction is not gated by a caller policy, unless a trusted-path decision is recorded | reactions, `authorize` | D (silent = major) |
 | G5 | Row scoping (whose data) is part of the view, not a filter the caller supplies | queries | D |
-| G6 | Every persona Cannot line resolves to an executable gate (`authorize` policy, or ownership `claim "x" matches subject\|<command property>`) and a `then denied` spec whose caller is synthesized with `given caller as <Persona>` or explicitly carries the effective-gate roles/claims; otherwise recorded as a gap. Persona text is intent only | personas, policies, specs | D |
-| G7 | Every command and query under an inherited module/feature `authorize` has its own `then denied` spec; authorization shared by a feature is declared at feature/module level so new paths inherit it | policies, specs | D |
-| G8 | Ownership/claim targets are a supported scalar (text, Uuid, Date or DateTime render; a numeric or Boolean target is always denied; other shapes and a command without exactly one identifier are STAGE-ESM-015 at Stage 4.73.1): noted | policies | C (renderable mode) |
+| G6 | Every persona Cannot line resolves to an executable gate (`authorize` policy, or ownership `claim "x" matches subject\|<command property>`, or a Uuid `require <command property> == <protected read path>`) and a `then denied` spec whose caller is synthesized with `given caller as <Persona>` or explicitly carries the effective-gate roles/claims; otherwise recorded as a gap. Persona text is intent only | personas, policies, specs | D |
+| G7 | Every command and query under an inherited module/feature `authorize` has its own `then denied` spec; authorization shared by a feature is declared at feature/module level so new paths inherit it. `require anonymous` is flagged on anything the business did not name public; it must be the whole authorization, preferably in a separate public module, and is not the same as omitting `authorize` | policies, specs | D (major when it exposes another person's data) |
+| G8 | Ownership/claim targets are a supported scalar (text, Uuid, Date or DateTime render; a numeric or Boolean target is always denied; other shapes and a command without exactly one identifier are STAGE-ESM-015): noted | policies | C (renderable mode) |
 
 ## Phase 10. Views, queries and screens (4 checks, H1-H4)
 | Id | Check | Evidence | Tier |
 |---|---|---|---|
 | H1 | Query shape follows the business view (list where people scan; lookup where they open one) | queries, screens | D |
-| H2 | Executable scope: a keyed `=> RM optional` query with `by` named like a read-model property, or a collection (`=> RM[]`, observable too) with caller-supplied `by` and/or equality filters (ESM v14 since 4.143.0). `from`, single-result filters, opaque `scoped to`/`performer` and composite `by` remain PLAY0268. The projection routes by the same identity (a `from` key or an event property, or `$eventSourceId`; `$eventSourceId` is not mandated). Filtered models: CLI 3.57.0 / Stage 4.89.1 admit through v15, including supported v14 equality filters. Renderable scope only: Stage-specific identity/filter limits (Stage 4.89.1 renders a keyed optional snapshot lookup and observable collection queries; any other query is `STAGE-ESM-010`) | queries, projections | C (executable); C (render admission, renderable only) |
+| H2 | Executable scope: a keyed `=> RM optional` query with `by` named like a read-model property, or a collection (`=> RM[]`, observable too) with caller-supplied `by` and/or equality filters. `from`, single-result filters, opaque `scoped to` and a list-query `by` block remain PLAY0268; a `performer` query is an opaque read (PLAY0270) left out of the executable model ([version gate](../../cratis-screenplay-toolchain/references/executable-subset.md#code-attachments-what-binds-what-never-does)). A read model with several key parts binds as v27 (Requires Screenplay 4.204.0). The projection routes by the same identity (a `from` key or an event property, or `$eventSourceId`; `$eventSourceId` is not mandated). Filtered models: supported v14 equality filters render within the CLI bundle's ESM ceiling. Renderable scope only: Stage-specific identity/filter limits; keyed optional snapshot lookups and snapshot/observable collections render (Requires Stage 4.90.0 for snapshot lists; older renderers report `STAGE-ESM-010`). Check query concept-validation parity separately; primitive-argument targets answer absence instead of Validation | queries, projections | C (executable); C (render admission, renderable only) |
 | H3 | One builder per read model; projection `key` only on `from` | projections | C |
 | H4 | Screens show one actor's point of view; a form submits one command | screens, forms | D |
 
@@ -193,7 +193,7 @@ artifact is `N/A: <reason>`.
 
 | Id | Check (the rejected pattern) | Signal to look for | Severity |
 |---|---|---|---|
-| R1 | Code-first change that silently outranks accepted model intent | behaviour added in code with no `.play` counterpart; the model edited to match existing code; the model left stale after a code change; optional structural evidence: `cratis screenplay conform <model-root> --project <path>` (CLI 3.42.0+, exit 0/1/2, exact structural addresses only, never a behavioral or V4 verdict; MSBuild runs, so a trusted clone) | major (critical when the code contradicts a protection) |
+| R1 | Code-first change that silently outranks accepted model intent | behaviour added in code with no `.play` counterpart (for hand-written code changed since it was last checked, use `cratis-screenplay-render-and-gap-fill/references/drift-and-fallback-record.md`, section "Hand-written code changed since it was last verified"); the model edited to match existing code; the model left stale after a code change; optional structural evidence: `cratis screenplay conform <model-root> --project <path>` (CLI 3.42.0+, exit 0/1/2, exact structural addresses only, never a behavioral or V4 verdict; MSBuild runs, so a trusted clone) | major (critical when the code contradicts a protection) |
 | R2 | A diagram, board or document in place of executable semantics | a rule only in a board note, a description or a wiki page; no property, validation, constraint or spec behind it (E8) | major |
 | R3 | Claims of universal low-code, lossless recovery or target parity | words like "fully generated", "lossless", "any target" in a report or description | minor; major when it hides a gap |
 | R4 | Framework machinery in the domain vocabulary (saga, aggregate, passive objects, HTTP or broker detail) or syntax wanted because a framework API is common | declarations named after saga, handler classes, topics, endpoints; a request to add language syntax to mirror a framework API | minor; major when it shapes the model |

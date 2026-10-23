@@ -4,7 +4,14 @@
 
 # Recovery, retention and upgrades
 
-Verified at **Cratis/Chronicle v19.50.1**:
+## Contents
+
+- Observer behavior
+- Causation values and incidents
+- SQL database ownership
+- Upgrade and restore
+
+Source: `Cratis/Chronicle`:
 `Documentation/hosting/configuration/{observers,events,clustering}.md`,
 `Documentation/hosting/production.md`,
 `Source/Kernel/Core/Configuration/Alerts.cs`, and
@@ -31,21 +38,71 @@ a new catch-up failure stops that step rather than letting other sources proceed
 Full replay is inactive until completion, then routes to catch-up/live unless
 quarantined. Partition quarantine stops that partition's automatic retries;
 observer quarantine suppresses automatic recovery for the whole observer.
-Sources at v19.50.1: `Documentation/concepts/observers.mdx`,
+Sources: `Documentation/concepts/observers.mdx`,
 `Documentation/projections/registration-lifecycle.md`, and
 `Source/Kernel/Core/Observation/Jobs/{CatchUpObserver,ReplayObserver}.cs`.
 
+Requires Chronicle 19.56.0 for authorized `FastForward` on .NET `IReactors`,
+`IReducers` and `IProjections` (by observer id or generic artifact), and the
+Workbench action. It moves to the sequence tail, discards failed partitions and
+keeps built state without invoking skipped events. Inspect `FastForwardResult`
+and its outcome: replaying/unavailable is not success. Record the exact observer,
+position and skipped scope before authorization; replay from the required history
+is a recovery action, not automatic undo. Check the kernel/client version;
+older deployments have no fast-forward operation.
+
+Requires Chronicle 19.62.2 for suspected-skip diagnostics:
+`chronicle-observer-events-suspected-skipped` and
+`chronicle-appended-events-queue-events-possibly-undelivered`, with rate-limited
+warnings identifying the affected observer/position/reason. Delivery behavior is
+unchanged; absence of a warning does not prove complete historical processing.
+
+Requires Chronicle 19.59.4 for `Shutdown:DrainTimeout`
+(`Cratis__Chronicle__Shutdown__DrainTimeout`, default eight seconds), capped below
+the host shutdown timeout. It bounds in-flight observer completion and MongoDB
+buffer flushing; overdue work is logged and recorded as failed where time allows.
+Requires 19.55.2 for catch-up/replay progress to wait for confirmed buffered writes
+on every silo and resume from the last durable position after a failed window.
+Check the kernel version and shutdown logs; neither guarantee makes an interrupted
+external effect exactly once.
+
+Requires Chronicle 19.77.4 for an observer replaced by a newer connected client
+to hand over to a still-connected older client when the newer one disconnects.
+The newest registration wins while both are connected; the older handler does
+not receive event types only the departed client handled. Check the kernel tag;
+older kernels can leave that observer stopped.
+
+### Job acceptance and bounded recovery
+
+Requires Chronicle 19.80.0 for `IJobs.Stop` and `IJobs.Resume` to return
+`JobCommandResult` with `Accepted` and a refusal reason. A completed RPC is not
+an accepted operation: inspect the result. `RetryFailedPartitions` retries
+partitions through bounded per-partition jobs without reopening a concluded
+replay. Do not invent a CLI flag for this contract operation.
+
+Timed-out job steps retry up to five attempts. Replay work has at most 16
+partition steps active, but projection replay/catch-up still use the single
+ordered step above; do not generalize partition parallelism to projections.
+Running jobs whose steps concluded over two minutes ago are reconciled, and
+replay-complete notifications retry. These recovery paths do not clear quarantine or
+prove historical completeness. Check the kernel/client version before relying
+on acceptance results; older clients do not expose them.
+
+Requires Chronicle 19.77.2 for stopped/deactivated catch-up and replay steps to
+drain within the job-step stop timeout and resume from their durable checkpoint.
+This does not make external effects exactly once.
+
 ### Next-event lookup failures
 
-At **v19.50.1**, Routing keeps the saved position and defers observation when
+Routing keeps the saved position and defers observation when
 `GetNextSequenceNumberGreaterOrEqualTo` returns a storage error. A watchdog tick
 retries that deferred routing only while subscribed and not quarantined. Its
 active-observer lookup also leaves the cursor unchanged on error. Only
 `GetSequenceNumberError.NotFound` proves there is no relevant event and permits
 fast-forward. Read failures are not "nothing to handle"; preserve and investigate
 the warning. Sources: `Source/Kernel/Core/Observation/States/Routing.cs` and
-`Observer.Watchdog.cs`. This fixes #4770, not the proposed Ordered Lanes design
-or all historical delivery/completion limitations. Do not claim past omissions
+`Observer.Watchdog.cs`. This does not implement the proposed Ordered Lanes design
+or remove every delivery/completion limitation. Do not claim past omissions
 were repaired automatically.
 
 `observers.definitionEvolution` governs projection/reducer changes:
@@ -74,6 +131,17 @@ observer failure/quarantine counters support alerting without dumping event
 payloads. Inspect the configured metrics endpoint and incident queries; counters
 are operational evidence, not proof that a failed partition recovered. Do not
 reintroduce high-cardinality partition labels into exported failure metrics.
+
+## SQL database ownership
+
+Requires Chronicle 19.62.3 for recorded SQL database bindings in the cluster
+`DatabaseNames` table and hashed names beyond PostgreSQL's 63-byte/SQL Server's
+128-character limits. Existing bindings do not move automatically. An ambiguous
+truncated legacy deployment fails with `DatabaseOwnershipUnresolved`; follow the
+product's SQL database-name migration guide before restarting, never reset its
+storage to bypass the failure. Overlong cluster names fail startup, and incomplete
+migrations fail with `DatabaseMigrationIncomplete`. Check the kernel version and
+inspect bindings before an authorized migration; older naming can share databases.
 
 ## Upgrade and restore
 
