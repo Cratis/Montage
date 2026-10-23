@@ -8,7 +8,7 @@ Cratis prefers inline `produces event <Name>` for a generation-1 event owned by
 one command. Keep a standalone `event` when several commands or reactions share
 it, and use plain `produces <Name>` with explicit `for <identifier>` on commands.
 Reactions cannot declare inline events. This is a corpus convention, not a
-compiler requirement. Screenplay v4.145.0 `Documentation/screenplay/commands.md:80-90,136-176`
+compiler requirement. Screenplay `Documentation/screenplay/commands.md`
 documents the destination defaults and calls plain omission legacy omission behavior.
 
 This complete example declares its payload and mappings together:
@@ -35,8 +35,9 @@ module Projects
 The omitted `for` means the command's required scalar identifier **only for
 inline productions**, when every production targets that same source. Once a
 production targets another source, every production must state `for`. Mixing
-omitted inline and plain destinations also fails (`PLAY0470`); there is no
-verified MCP repair for that diagnostic. Explicit syntax does not make cross-source
+omitted inline and plain destinations also fails (`PLAY0470`); the MCP repair needs an explicit
+author-chosen destination per production and never retargets an explicit one (see the
+model-authoring skill's `references/destination-intent-repair.md`). Explicit syntax does not make cross-source
 execution supported.
 
 Plain `produces X` references a declared event; omitting `for` does not infer
@@ -52,12 +53,12 @@ in event context. Extract an inline declaration when another producer needs it;
 read-only consumers alone do not require extraction. Preserve a shipped contract
 rather than mechanically removing an existing identity field.
 
-**Stage caveat:** rendered Arc commands ignore production `for` (Stage#187;
-Screenplay v4.145.0 `commands.md:503`). Verify target routing separately.
+**Stage caveat:** rendered Arc commands ignore production `for` (see Screenplay
+`commands.md`). Verify target routing separately.
 
 Keep conditional `produces when` events standalone: its next line must be a
-plain event name, not `event <Name>` (Screenplay v4.145.0
-`Source/DotNET/Screenplay/Parsing/ProducesParser.cs:64-83`). Also retain plain
+plain event name, not `event <Name>` (Screenplay
+`Source/DotNET/Screenplay/Parsing/ProducesParser.cs`). Also retain plain
 production when a site-specific tag must not become an event-type tag.
 
 Inline declarations are slice-owned contracts, usable by other consumers.
@@ -80,6 +81,9 @@ MCP can declare a missing produced event (`PLAY0166`), add explicit routing
 (`PLAY0478`), remove a redundant pin (`PLAY0471`), or remove an inline identifier
 copy (`PLAY0469`). The last **changes the event contract**, retires a property,
 refuses affected consumers/opaque implementations and is not fix-all. It does
-not establish that stored data is safe to migrate. Use
+not establish that stored data is safe to migrate; for a contract that may have been
+stored, `propose-property` `remove` with `newGeneration: true` extracts the event and
+drafts a new generation (a source draft, never deployment ready; requires Screenplay
+4.232.0, `screenplay --version`). Use
 `cratis-screenplay-model-authoring` for discovery, preview, extraction and rename.
 

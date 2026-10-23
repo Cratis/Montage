@@ -12,6 +12,15 @@
 Write it **before** drafting specs, keep it in `.ai-work/screenplay/<model-slug>/coverage.md` (or the
 `STATE.md` beside it), and update it with the specs. Reviewers check it against the model. Screenplay 4.127.0 MCP `find-specification-obligations` seeds the inventory (SPEC001–SPEC008), for command success, requirements, command/concept validation, effective authorization gates, value constraints, read models, projection removals and reaction outcomes. A met row proves matching authored presence, not full coverage or passing execution: the matrix still records domain judgments and scenario types the heuristic cannot infer.
 
+For SPEC004, a gated query's denial can use `when query <Query>` with
+`then denied`, or no `when` and exactly one `then query <Query>` with `arguments`
+and no `result`, followed by `then denied`. The read-only form meets that query's
+denial obligation, not the returned read model's SPEC006 assertion obligation.
+Keep a separate view state, absence or query-result specification.
+Requires Screenplay 4.212.2 (`screenplay --version`) for this inventory matching;
+older servers miss the read-only denial for SPEC004 and count it for SPEC006.
+Upgrade before gating on those rows; a met denial still proves presence, not execution.
+
 ## Cell values
 - `spec <Name>` - written; the name exists in the model.
 - `n/a: <domain reason>` - the situation cannot occur in this business. "Keeps it short" is not
@@ -22,6 +31,13 @@ Write it **before** drafting specs, keep it in `.ai-work/screenplay/<model-slug>
   PLAY0268/0271; report the model as design-complete, not binding-ready) and marked
   NOT enforced in the slice `description`, with its target named (Arc `[ProtectedDecision]`,
   Chronicle DCB, or a constraint). It is also in the phase report.
+- `n/a: technical` - deliberately unspecified because the language or runtime already
+  guarantees it. The list is closed: binder-enforced shape (type, required property),
+  collision of `generated` identifiers, and an infrastructure fault the runtime absorbs with
+  nothing a person could notice. A repeat or re-delivery the business would notice (a second
+  fact, email, charge or count) is never technical: it is Duplicate/retry (catalogue section 5).
+  Anything else needs a domain reason or another cell value. Review treats a spec in these
+  categories as a smell, not as coverage.
 - `open: <required case>` - planned but not yet drafted. Never counts as coverage.
 - `question: <id>` - needs a domain answer; listed in open questions.
 - `gap: <code>` - expressible in design mode but blocked in the chosen mode (e.g. removal in

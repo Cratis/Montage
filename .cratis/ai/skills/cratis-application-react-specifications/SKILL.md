@@ -1,6 +1,6 @@
 ---
 name: cratis-application-react-specifications
-description: Write specifications for the React and TypeScript surface of a Cratis application slice — view models, helpers, command orchestration, and narrow component behavior — using Vitest with Mocha-style describe/it, Sinon, and the Chai should interface. Use when adding or changing frontend behavior in an application that consumes Cratis. Do not use for backend scenarios or for specifications inside a Cratis framework package.
+description: Write specifications for the React and TypeScript surface of a Cratis application slice — view models, helpers, command orchestration, and narrow component behavior — using Vitest with Mocha-style describe/it, Sinon, and the Chai should interface. Use when specifying React view-model decisions, frontend command orchestration or narrow component interactions with Vitest, Sinon and Chai. Do not use for backend pipeline scenarios (use cratis-application-slice-specifications) or framework package specs (use cratis-specifications-typescript).
 license: MIT
 metadata:
   cratis-hint-paths: "**/for_*/**/*.ts **/for_*/**/*.tsx"
@@ -13,9 +13,9 @@ Frontend specifications are specifications, not tests. The `for_ / when_ / and_`
 shape is deliberately the same BDD language as the backend, so one subject, one
 context, clear setup, and small assertions read as sentences.
 
-This is the **application** frontend peer of the backend slice specification
-skill. Specifications for a Cratis framework package (`@cratis/*`) follow that
-repository's own TypeScript specification conventions instead.
+This is the **application** frontend peer of `cratis-application-slice-specifications`
+for backend pipeline scenarios. Framework package (`@cratis/*`) specifications
+use `cratis-specifications-typescript` and the repository's conventions instead.
 
 ## Stack
 
@@ -136,7 +136,7 @@ Cratis Components mount inside `CratisComponentsProvider`, so a specification
 that renders one for real must provide it (enable `toaster` only when asserting
 toasts). In jsdom, provide a `ResizeObserver` stub for any Components area that
 observes size, including observable tables, Filter and toolbars. Source-checked
-at Components v4.26.4 (`Source/**`); this is not a split-pane-only requirement.
+in Components (`Source/**`); this is not a split-pane-only requirement.
 
 ## Async and time
 
@@ -184,10 +184,7 @@ them.
 ## Route near misses
 
 - An accepted `.play` model under the model root covers the behavior, or the
-  repository is opted in (the root holds a committed `.play` file (`git ls-tree -r --name-only HEAD` lists a `.play` file there, narrowed to `-- <root>` when a root is configured), or the project set
-  `mcpServers.screenplay.root` in `.cratis/ai.json`; an empty directory, install
-  output, an uncommitted `.play` draft or a `.play` file outside the root does not count; master definition:
-  `cratis-screenplay-modeling-lifecycle`): change the model first with
+  repository is opted in (per `general.md` "Model first"; where `cratis-screenplay-modeling-lifecycle` is installed, run its `scripts/model-first-status.mjs`): change the model first with
   `cratis-screenplay-event-modeling`. If the Screenplay skills are not installed,
   say so and do not author `.play` from memory.
   Edit code here only for infrastructure, clients, adapters, Screenplay code

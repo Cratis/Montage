@@ -14,16 +14,13 @@ Everything else is ordinary EF Core.
 
 ## Verified product sources
 
-| Package | Version | Purpose |
-| --- | --- | --- |
-| `Cratis.Arc.EntityFrameworkCore` | `22.75.0` | `BaseDbContext`, `ReadOnlyDbContext`, `WithEntityFrameworkCore`, column helpers, `EntityFrameworkReadModelForCommandResolver` |
-| `Cratis.Arc.Core` | `22.75.0` | `Cratis.Arc.Queries.ModelBound.ReadModelAttribute`, `ICanResolveReadModelForCommand` |
-| `Microsoft.EntityFrameworkCore` | `10.0.11` | EF Core itself, including all migration tooling |
+| Package | Purpose |
+| --- | --- |
+| `Cratis.Arc.EntityFrameworkCore` | `BaseDbContext`, `ReadOnlyDbContext`, `WithEntityFrameworkCore`, column helpers, `EntityFrameworkReadModelForCommandResolver` |
+| `Cratis.Arc.Core` | `Cratis.Arc.Queries.ModelBound.ReadModelAttribute`, `ICanResolveReadModelForCommand` |
+| `Microsoft.EntityFrameworkCore` | EF Core itself, including all migration tooling |
 
-> Arc EF context, builder and observation surface rechecked at v22.75.0.
-> Verify provider-specific migration behavior against the configured provider.
-
-Reverify before claiming support for another version.
+Verify provider-specific migration behavior against the configured provider and the installed Arc version.
 
 ⚠️ **Arc ships no migration tooling of its own.** There is no design-time
 DbContext factory, no migration runner, no table-name constant convention, and
@@ -74,7 +71,13 @@ observation services and then, **only when `AutoDiscoverDbContexts` is true and
 the connection string is non-empty**, discovers and registers every public
 `BaseDbContext` subtype that is not marked `[IgnoreAutoRegistration]`.
 
-⚠️ `WithEntityFrameworkCore()` with no arguments discovers **nothing**.
+Requires Arc 22.109.0 for options bound from `Cratis:EntityFrameworkCore` before
+`configureOptions` runs; that callback wins over configuration. Read
+../cratis-arc-hosting/references/connection-resolution.md when resolving tenant or schema-purpose
+connections, including pooled contexts.
+
+⚠️ Without a connection string from configuration or the callback,
+`WithEntityFrameworkCore()` discovers **nothing**.
 `EntityFrameworkCoreOptions.ConnectionString` defaults to the empty string, and
 both discovery gates test it. A setup that looks wired and registers no context
 is almost always this.
@@ -129,6 +132,8 @@ Use the standard EF Core tooling — `dotnet ef migrations add <Name>` and
 `dotnet ef database update` — with the `Microsoft.EntityFrameworkCore.Design`
 package referenced by the project that owns the context. Arc contributes nothing
 to how a migration is created, discovered, or applied.
+
+A migration that is committed or applied to any database is append-only: never edit or delete it. Correct a mistake with a new migration. Only a migration that is both unapplied and uncommitted may be removed (`dotnet ef migrations remove`) and regenerated.
 
 What Arc **does** contribute is a set of column helpers that pick the right
 provider-specific SQL type, so one migration works across SQLite, SQL Server and
@@ -197,7 +202,7 @@ Auxiliary observations can pass `ignoreQueryContext: true` so only the primary
 uses client paging/sorting and writes totals. `ObserveSingle`/`ObserveById` emit
 `default` when the row is absent/deleted/outside the filter, remaining subscribed.
 Indexer-property keys (shared-type entities) are supported; composite and
-shadow-only keys are refused at setup. Source at Arc v22.75.0:
+shadow-only keys are refused at setup. Source:
 `Source/DotNET/EntityFrameworkCore/Observe/DbSetObserveExtensions.cs`.
 
 ⚠️ Database-level change notification differs by provider: PostgreSQL uses

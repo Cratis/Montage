@@ -6,7 +6,7 @@
 
 Use these forms when writing or reviewing `.play`. Acceptance of an older
 spelling is not a recommendation to teach it. Information diagnostics do not
-fail `--warnaserror`; the corpus verification gate rejects the nine style codes
+fail `--warnaserror`; the corpus verification gate rejects the twelve style codes
 below even when a fence declares `expect`, unless an exact, reasoned migration
 exception exists in the verifier's preferred-syntax allowlist. That allowlist also
 covers deliberate legacy explanations in prose; stale entries fail.
@@ -24,6 +24,9 @@ covers deliberate legacy explanations in prose; stale entries fail.
 | Imports | Import only declarations not already declared by the application | Importing the application's own names | PLAY0290 (warning) |
 | Interaction guard | Block-form `when` alternatives | Opaque interaction `where` on click, double click or select | PLAY0564 (warning or information) |
 | Projection transition cardinality | Source binding emits `One` | Constructed/deserialized ESM v1–v3 `ZeroOrOne` / `Many` | PLAY0445 (warning; ESM-only, not a source spelling) |
+| Command decision reads | `command reads protected` after reviewing every read's admission, absence and conflict semantics | Eligible legacy command reads without the application-root preamble | PLAY0786 (information; individual typed repair review, never fix-all) |
+| Profile shell | `root template <Name>` in a `ui profile` | `layout <Name>` in a `ui profile` | PLAY0791 (warning; quick fix) |
+| Literal text rules | `starts with`, `ends with`, `contains`, `not contains` or equality, preserving message and severity | Exact deprecated Studio `matches` shapes | PLAY0787 (warning; not arbitrary regex rewriting) |
 
 `query Q => observable?` is not a legacy optional type suffix and has no keyword
 replacement. Reaction/Translate `where` is current syntax, not an interaction
@@ -53,7 +56,7 @@ implementation separately.
 
 ## Navigation `by` and form `columns`
 
-Both are current, not legacy (settled in Screenplay#688, v4.145.1). Screen
+Both are current, not legacy. Screen
 navigation passes the target's key with `by <parameter>` (`on row-click navigate
 to InvoiceDetail by invoiceId`) and further values with `parameter <name> from
 <binding>`; navigation inside an interaction block passes values with `with <name>
@@ -63,12 +66,8 @@ case needs; neither has a style diagnostic.
 
 ## Verified product sources
 
-Screenplay **v4.145.0** (syntax unchanged from 4.144.0):
-`Documentation/screenplay/types.md:23-25`, `concepts.md:34-37,142-146`,
-`ast-compatibility.md:68`, `commands.md:80-90,136-176,503`,
-`events.md:114,118-120`, `event-sources.md:7,86,132`, `reactions.md:298-312`,
-`interactions.md:105-107`, `folders.md:418-421`, `diagnostics.md:825,979-987,1013,1084,1105-1120,1271`.
-Printer: `Source/DotNET/Screenplay/Printing/ScreenplaySyntaxText.cs:41`,
-`ScreenplayPrinter.Expressions.cs:18-32`, `ScreenplayPrinter.Commands.cs:481-530`.
-Navigation and forms: Screenplay v4.145.1 `glossary.md:65`, `forms.md:40`; https://github.com/Cratis/Screenplay/issues/688.
+Screenplay documentation pages: `types.md`, `concepts.md`, `ast-compatibility.md`, `commands.md`,
+`events.md`, `event-sources.md`, `reactions.md`, `interactions.md`, `folders.md`, `glossary.md`,
+`forms.md` and `diagnostics.md`. Printer: the Screenplay printer's syntax text and its expression and
+command printing.
 The published contract is the selector's authority, not this hand-written table.

@@ -23,6 +23,11 @@ short; cite evidence rows (`E12`) and questions (`Q3`) instead of repeating cont
   status codes (ignored), time-only correlation, PostgreSQL column over-reporting.
 - Generator lag that applies here: generations, appended-event specs, reactions, triggers.
 
+## Not yet extracted
+Features still at Pass 0 (`re-entry-and-passes.md`), each with the reason and what would trigger its
+next pass. They are never counted as done. Features whose evidence is `stale` after re-entry are
+listed too.
+
 ## Behaviour not observed
 Routes, jobs or tables the inventory found but no evidence exercised. Each is `unknown`,
 with the bounded check done (for example "searched for callers: none found in 3 files")
@@ -31,7 +36,8 @@ and the question raised.
 ## Rules not enforced or not expressible today
 One line per rule, named individually (never one generic platform caveat): the rule, its
 evidence row, the invariant and consistency risk, and the target enforcement. State-dependent
-checks are written as `reads` + `require` and marked NOT enforced in the slice description;
+checks use `reads` + `require`: eligible reads opt into v25 protection, while legacy/refused
+shapes are marked unenforced and Stage realization remains a separate gap;
 date rules and opaque policies that no declaration can state stay in the slice `documentation` and here.
 
 ## Unknowns and undecided target decisions
@@ -46,3 +52,7 @@ Confirmed by <who> on <date> (rows), or "no capture run".
 
 Wording: "candidate", "recovered structure", "unverified". Never "lossless", "complete",
 "automatic" or "equivalent".
+
+MCP `semantic-diff` compares canonical exports of the same application. It does not guess
+renames, run specifications or prove recovered behavior, so a structural match is never an
+execution-equivalence claim. Inspect its incomplete sections before quoting it in the loss report.
