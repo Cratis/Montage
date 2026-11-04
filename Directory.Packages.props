@@ -10,10 +10,10 @@
     <!-- Keep the public Cratis / Arc family aligned so generated self-bindings and runtime contracts
          are built against the same Chronicle contract generation. -->
     <PackageVersion Include="Cratis" Version="22.156.4" />
-    <PackageVersion Include="Cratis.Arc" Version="22.51.0" />
-    <PackageVersion Include="Cratis.Arc.MongoDB" Version="22.156.4" />
-    <PackageVersion Include="Cratis.Arc.ProxyGenerator.Build" Version="22.156.4" />
-    <PackageVersion Include="Cratis.Arc.Swagger" Version="22.156.4" />
+    <PackageVersion Include="Cratis.Arc" Version="22.165.2" />
+    <PackageVersion Include="Cratis.Arc.MongoDB" Version="22.165.2" />
+    <PackageVersion Include="Cratis.Arc.ProxyGenerator.Build" Version="22.165.2" />
+    <PackageVersion Include="Cratis.Arc.Swagger" Version="22.165.2" />
     <!-- Keep Chronicle clients and the Aspire hosting integration on the same release; the AppHost
          pins the Chronicle kernel image to this same version (Source/Composition/Program.cs). -->
     <PackageVersion Include="Cratis.Chronicle" Version="19.123.1" />
