@@ -1,9 +1,9 @@
 // Copyright (c) Cratis. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using Cratis.Choreography.Jobs;
 using Cratis.Chronicle.AspNetCore;
 using Cratis.DependencyInjection;
-using Cratis.Orleans.Jobs;
 using Microsoft.Extensions.Options;
 using Orleans;
 
@@ -14,7 +14,7 @@ namespace Montage.Jobs;
 /// </summary>
 /// <remarks>
 /// The engine itself - grain mechanics, storage, throttling, resuming after a restart - lives
-/// entirely in <c>Cratis.Orleans.Jobs</c>. Montage has a single event store and a single namespace,
+/// entirely in <c>Cratis.Choreography.Jobs</c>. Montage has a single event store and a single namespace,
 /// so the accessor is the one place that names the <c>Scope</c> (the Chronicle event store) a job's
 /// steps append their events into - the same mapping
 /// <see cref="Cratis.Chronicle.IChronicleClient.GetEventStore"/> targets from inside a step.

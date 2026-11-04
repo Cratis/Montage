@@ -1,9 +1,9 @@
 // Copyright (c) Cratis. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using Cratis.Choreography.Jobs;
 using Cratis.Chronicle;
 using Cratis.Chronicle.EventSequences;
-using Cratis.Orleans.Jobs;
 using Microsoft.Extensions.Logging;
 using Montage.Shows.Production;
 using Orleans.Runtime;
