@@ -156,6 +156,8 @@ module Finance
     slice StateChange RecordContact
       command RecordContact
         name ContactName
+      screen RecordContact
+        action RecordContact for screen
 ```
 
 A top-level `purpose` has optional singleton `description`, `basis` (optional
