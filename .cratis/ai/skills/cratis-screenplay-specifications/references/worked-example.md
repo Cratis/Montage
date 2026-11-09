@@ -26,6 +26,8 @@ module Invoicing
           invoiceNumber InvoiceNumber = invoiceNumber
       constraint UniqueInvoiceNumber
         unique invoiceNumber on InvoiceRegistered
+      screen RegisterInvoice
+        action RegisterInvoice for screen
       specification RegisteringAnInvoice
         given caller
           authenticated
