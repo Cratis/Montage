@@ -32,7 +32,7 @@ services:
             try { rs.status() } catch (e) { rs.initiate({_id:"rs0", members:[{_id:0, host:"localhost:27017"}]}) }'
 
     chronicle:
-        image: cratis/chronicle:19.33.3-development-slim
+        image: cratis/chronicle:19.153.2-development-slim
         container_name: montage-chronicle
         # Must match the Cratis.Chronicle client package version in Directory.Packages.props.
         depends_on:

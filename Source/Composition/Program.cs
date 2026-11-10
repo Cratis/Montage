@@ -31,7 +31,7 @@ builder.CreateResourceBuilder(mongodbServer).WithVolume("montage-mongodb-data", 
 // with a fixed host port; an Aspire HTTP endpoint would proxy at the HTTP layer and reset the TLS
 // handshake.
 var chronicle = builder
-    .AddContainer("chronicle", "cratis/chronicle", "19.33.3-development-slim")
+    .AddContainer("chronicle", "cratis/chronicle", "19.153.2-development-slim")
     .WithEndpoint(port: 35000, targetPort: 35000, name: "grpc")
     .WithEnvironment("Cratis__Chronicle__Storage__Type", "MongoDB")
     .WithEnvironment(context => context.EnvironmentVariables["Cratis__Chronicle__Storage__ConnectionDetails"] = mongodb.Resource.ConnectionStringExpression)
