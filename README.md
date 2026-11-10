@@ -134,7 +134,7 @@ server on http://localhost:9000.
 
 ## 🚀 Getting started
 
-Prerequisites: .NET 10 SDK, Docker, Node, ffmpeg, and a Chromium/Chrome for the engine
+Prerequisites: .NET 11 SDK, Docker, Node, ffmpeg, and a Chromium/Chrome for the engine
 renderer.
 
 ```bash
