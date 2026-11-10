@@ -14,9 +14,8 @@ RUN npm ci --no-audit --no-fund
 COPY Source/Engine ./
 RUN npm run build
 
-# Matches the SDK band global.json pins (10.0.301, rollForward latestPatch); the floating 10.0 tag
-# carries a newer feature band that global.json rejects.
-FROM mcr.microsoft.com/dotnet/sdk:10.0.301 AS build
+# The .NET 11 GA SDK global.json pins (11.0.100, rollForward latestFeature), pinned by digest.
+FROM mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea AS build
 ARG CONFIGURATION=Release
 ARG VERSION=0.0.0
 
@@ -40,7 +39,8 @@ RUN dotnet publish Source/Montage/Montage.csproj \
 ####################################
 # Runtime image
 ####################################
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS runtime
+# .NET 11 images ship on Ubuntu 26.04 (resolute); there is no noble variant. Pinned to the GA digest.
+FROM mcr.microsoft.com/dotnet/aspnet:11.0.0-resolute@sha256:bc0d6653979efba491ab3d6f589d691f96c309c3c3ef81325efa6978e7b7f242 AS runtime
 
 # Node runs the engine's offline renderer, ffmpeg encodes the frames and muxes the voiceover, and
 # Playwright's Chromium captures them. Chromium comes from Playwright rather than apt because the
