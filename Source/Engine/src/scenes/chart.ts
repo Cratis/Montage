@@ -27,17 +27,26 @@ interface Series {
   span: number;
 }
 
+/** The chart's authored parameters, coerced to safe types. */
+function chartParams(params: Record<string, any>) {
+  return {
+    type: String(params.type ?? 'bar'),
+    labels: asList(params.labels, String) as string[],
+    values: asList(params.values, Number) as number[],
+    title: params.title ? String(params.title) : '',
+    kicker: params.kicker ? String(params.kicker) : '',
+  };
+}
+
+const asList = (raw: unknown, coerce: (v: unknown) => unknown): unknown[] => (Array.isArray(raw) ? raw.map((v) => coerce(v)) : []);
+
 export class Chart extends Scene {
   override render(f: Frame, ctx: CanvasRenderingContext2D): void {
     const { W, H, params } = this.ctx;
     const lt = f.lt;
     ambient(ctx, this.ctx, f.t);
 
-    const type = String(params.type ?? 'bar');
-    const labels: string[] = Array.isArray(params.labels) ? params.labels.map(String) : [];
-    const values: number[] = Array.isArray(params.values) ? params.values.map(Number) : [];
-    const title = params.title ? String(params.title) : '';
-    const kicker = params.kicker ? String(params.kicker) : '';
+    const { type, labels, values, title, kicker } = chartParams(params);
     if (values.length === 0) return;
 
     const max = Math.max(...values, 0.0001);

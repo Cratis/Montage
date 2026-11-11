@@ -30,22 +30,21 @@ const boxPath = (n: DiagramNode, r: number) => {
   r = Math.min(r, w / 2, h / 2);
   return `M${x+r} ${y} H${x+w-r} Q${x+w} ${y} ${x+w} ${y+r} V${y+h-r} Q${x+w} ${y+h} ${x+w-r} ${y+h} H${x+r} Q${x} ${y+h} ${x} ${y+h-r} V${y+r} Q${x} ${y} ${x+r} ${y} Z`;
 };
-const edgePath = (edge: DiagramEdge, nodes: DiagramNode[]) => {
-  const a = nodes.find(n => n.id === edge.from), b = nodes.find(n => n.id === edge.to);
-  if (!a || !b) throw new Error(`Unknown connector ${edge.from} → ${edge.to}`);
+/** Auto-route from facing sides: horizontal when the nodes are further apart in x than in y. */
+function facingSides(a: DiagramNode, b: DiagramNode) {
   const ad = dimensions(a), bd = dimensions(b);
-  // Auto-route from facing sides, with an orthogonal elbow for branched hubs.
-  let x1: number, y1: number, x2: number, y2: number;
   const horizontal = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y);
   if (horizontal) {
     const right = b.x > a.x;
-    x1 = a.x + (right ? ad.w : 0); y1 = a.y + ad.h / 2;
-    x2 = b.x + (right ? 0 : bd.w); y2 = b.y + bd.h / 2;
-  } else {
-    const down = b.y > a.y;
-    x1 = a.x + ad.w / 2; y1 = a.y + (down ? ad.h : 0);
-    x2 = b.x + bd.w / 2; y2 = b.y + (down ? 0 : bd.h);
+    return { horizontal, x1: a.x + (right ? ad.w : 0), y1: a.y + ad.h / 2, x2: b.x + (right ? 0 : bd.w), y2: b.y + bd.h / 2 };
   }
+  const down = b.y > a.y;
+  return { horizontal, x1: a.x + ad.w / 2, y1: a.y + (down ? ad.h : 0), x2: b.x + bd.w / 2, y2: b.y + (down ? 0 : bd.h) };
+}
+const edgePath = (edge: DiagramEdge, nodes: DiagramNode[]) => {
+  const a = nodes.find(n => n.id === edge.from), b = nodes.find(n => n.id === edge.to);
+  if (!a || !b) throw new Error(`Unknown connector ${edge.from} → ${edge.to}`);
+  const { x1, y1, x2, y2, horizontal } = facingSides(a, b);
   const points = edge.points ?? (horizontal
     ? [[(x1+x2)/2,y1],[(x1+x2)/2,y2]]
     : [[x1,(y1+y2)/2],[x2,(y1+y2)/2]]);
@@ -149,14 +148,14 @@ export class Diagram extends Scene {
     const { node, g, effect } = box;
     const { raw, p, style } = build;
     const {w,h}=dimensions(node);
-    const drawn = effect==='draw'||effect==='pen';
+    const drawn = DRAWN_EFFECTS.has(effect);
     ctx.save();
     if(effect==='pop') { const s=1-Math.pow(1-raw,3);ctx.translate(node.x+w/2,node.y+h/2);ctx.scale(s,s);ctx.translate(-node.x-w/2,-node.y-h/2); }
     if(effect==='slide')ctx.translate(0,24*(1-p));
     const fill=drawn ? clamp(inv(0.45,1,raw)) : p;
     ctx.globalAlpha=fill;ctx.fillStyle=style.fill;ctx.fill(g.path);ctx.globalAlpha=1;
     if(effect==='wipe') {ctx.beginPath();ctx.rect(node.x,node.y,w*p,h);ctx.clip();}
-    if(effect==='fade'||effect==='pop'||effect==='slide')ctx.globalAlpha=p;
+    if(FADED_EFFECTS.has(effect))ctx.globalAlpha=p;
     trace(ctx, g, { p: drawn?p:1, color: node.color ?? style.stroke, pen: effect==='pen'||style.pen }, style.ink);
     const labelAlpha=clamp(inv(0.6,1,raw));ctx.globalAlpha*=labelAlpha;
     this.drawLabel(ctx, node, { w, h, style });
@@ -170,6 +169,11 @@ export class Diagram extends Scene {
     fit.lines.forEach((line,j)=>ctx.fillText(line.text,node.x+w/2,node.y+h/2+(j-(fit.lines.length-1)/2)*fit.size*1.18));
   }
 }
+
+/** Effects that draw the outline on; the rest fade their fill in. */
+const DRAWN_EFFECTS = new Set(['draw', 'pen']);
+/** Effects that fade the whole box with its progress. */
+const FADED_EFFECTS = new Set(['fade', 'pop', 'slide']);
 
 type Style = ReturnType<typeof styleOf>;
 interface Clock { start: (n: DiagramNode, i: number) => number; localTime: number; spec: DiagramSpec; nodes: DiagramNode[] }
@@ -185,12 +189,14 @@ function trace(ctx: CanvasRenderingContext2D, g: Geometry, look: { p: number; co
   const { p, color, pen } = look;
   ctx.strokeStyle=color;ctx.lineWidth=2.6;ctx.lineJoin='round';ctx.lineCap='round';
   ctx.setLineDash([g.length,g.length]);ctx.lineDashOffset=g.length*(1-p);ctx.stroke(g.path);ctx.setLineDash([]);ctx.lineDashOffset=0;
-  if (pen && p>0 && p<1) {
+  if (pen && inProgress(p)) {
     const tip=g.measure.getPointAtLength(g.length*p);
     ctx.save();ctx.shadowColor=color;ctx.shadowBlur=16;ctx.fillStyle=ink;
     ctx.beginPath();ctx.arc(tip.x,tip.y,3.5,0,Math.PI*2);ctx.fill();ctx.restore();
   }
 }
+
+const inProgress = (p: number) => p > 0 && p < 1;
 
 /** Arrow tip fading in at the end of a nearly complete connector. */
 function drawArrowhead(ctx: CanvasRenderingContext2D, g: Geometry, p: number): void {

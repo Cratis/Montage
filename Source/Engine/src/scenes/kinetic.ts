@@ -37,10 +37,7 @@ export class Kinetic extends Scene {
 
     const lines = this.sceneLines;
     if (lines.length === 0) return;
-    const line = lines.find((l) => t >= l.start && t < l.end)
-      ?? [...lines].reverse().find((l) => l.start <= t)
-      ?? lines[0];
-    if (!line) return;
+    const line = lineAt(lines, t);
 
     const show = this.visibleLines(line);
     const size = Math.round(Math.max(40, W * 0.031));
@@ -65,18 +62,16 @@ export class Kinetic extends Scene {
   private visibleLines(line: Line): Line[] {
     const lines = this.sceneLines;
     const li = lines.indexOf(line);
-    const prev = lines[li - 1];
-    const next = lines[li + 1];
-    const show: Line[] = [];
     // Short plates keep a stable layout across lyric-line changes. Adding/removing a
     // neighbour at a word boundary recentres the block abruptly and reads as a jump.
-    if (lines.length <= 3) show.push(...lines);
-    else {
-      if (prev && line.start - prev.end < 1.2) show.push(prev);
-      show.push(line);
-      if (next && next.start - line.end < 1.2) show.push(next);
-    }
-    return show;
+    if (lines.length <= 3) return [...lines];
+    const prev = lines[li - 1];
+    const next = lines[li + 1];
+    return [
+      ...(prev && line.start - prev.end < 1.2 ? [prev] : []),
+      line,
+      ...(next && next.start - line.end < 1.2 ? [next] : []),
+    ];
   }
 
   private drawRow(ctx: CanvasRenderingContext2D, row: Row, y: number, beat: Beat): void {
@@ -169,25 +164,33 @@ interface Beat {
  */
 function layoutRows(ctx: CanvasRenderingContext2D, show: Line[], fit: { maxW: number; spaceW: number }): Row[] {
   const { maxW, spaceW } = fit;
+  return show.flatMap((l) => wrapLine(l, l.words.map((w) => ctx.measureText(w.w).width), { maxW, spaceW }));
+}
+
+/** Greedily wrap one line's words (with their measured widths) into rows. */
+function wrapLine(l: Line, widths: number[], fit: { maxW: number; spaceW: number }): Row[] {
   const rows: Row[] = [];
-  for (const l of show) {
-    const widths = l.words.map((w) => ctx.measureText(w.w).width);
-    let current: number[] = [];
-    let currentW = 0;
-    l.words.forEach((w, wi) => {
-      const wordW = widths[wi]!;
-      const add = current.length ? spaceW + wordW : wordW;
-      if (current.length > 0 && currentW + add > maxW) {
-        rows.push({ line: l, indices: current, width: currentW, widths });
-        current = [];
-        currentW = 0;
-      }
-      currentW += current.length ? spaceW + wordW : wordW;
-      current.push(wi);
-    });
-    if (current.length) rows.push({ line: l, indices: current, width: currentW, widths });
-  }
+  let current: number[] = [];
+  let currentW = 0;
+  l.words.forEach((_, wi) => {
+    const add = current.length ? fit.spaceW + widths[wi]! : widths[wi]!;
+    if (current.length > 0 && currentW + add > fit.maxW) {
+      rows.push({ line: l, indices: current, width: currentW, widths });
+      current = [];
+      currentW = 0;
+    }
+    currentW += current.length ? fit.spaceW + widths[wi]! : widths[wi]!;
+    current.push(wi);
+  });
+  if (current.length) rows.push({ line: l, indices: current, width: currentW, widths });
   return rows;
+}
+
+/** The line being spoken at t; before the first / in a gap it is the latest started one. */
+function lineAt(lines: Line[], t: number): Line {
+  return lines.find((l) => t >= l.start && t < l.end)
+    ?? [...lines].reverse().find((l) => l.start <= t)
+    ?? lines[0]!;
 }
 
 /** Opacity of a word: faint ahead, full while spoken, soft once past; emphasis stays strong. */

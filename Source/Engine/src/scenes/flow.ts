@@ -31,16 +31,55 @@ interface NodeState {
   progress: Progress;
 }
 
+/** The flow's authored parameters, coerced to safe types. */
+function flowParams(params: Record<string, any>) {
+  return {
+    nodes: (Array.isArray(params.nodes) ? params.nodes : []) as Node[],
+    headline: params.headline ? String(params.headline) : '',
+    kicker: params.kicker ? String(params.kicker) : '',
+  };
+}
+
+/** Vertical center of a row: one row sits mid-plate, two rows sit above and below it. */
+function rowCenter(rows: number, row: number, H: number): number {
+  if (rows === 1) return H * 0.52;
+  return row === 0 ? H * 0.38 : H * 0.62;
+}
+
+/** Node entrance: fade, pop (scale about the center) or slide in. */
+function applyEntrance(ctx: CanvasRenderingContext2D, motion: Parameters<typeof isFade>[0], at: { x: number; y: number; w: number; h: number; appear: number }): void {
+  const { x, y, w, h, appear } = at;
+  if (isFade(motion)) ctx.globalAlpha = appear;
+  else if (isPop(motion)) {
+    ctx.translate(x + w / 2, y + h / 2);
+    ctx.scale(appear, appear);
+    ctx.translate(-(x + w / 2), -(y + h / 2));
+  } else {
+    const dx = slideOffset(motion, (1 - appear) * 70);
+    ctx.globalAlpha = Math.min(1, appear * 1.4);
+    ctx.translate(dx, 0);
+  }
+}
+
+/** Arrow endpoints between two nodes: side to side on one row, bottom to top across rows. */
+function linkEnds(a: { x: number; y: number }, b: { x: number; y: number }, size: { nodeW: number; nodeH: number }): { from: { x: number; y: number }; to: { x: number; y: number } } {
+  const { nodeW, nodeH } = size;
+  const sameRow = Math.abs(a.y - b.y) < 1;
+  const ax = sameRow ? a.x + nodeW : a.x + nodeW / 2;
+  const ay = sameRow ? a.y + nodeH / 2 : a.y + nodeH;
+  const bx = sameRow ? b.x : b.x + nodeW / 2;
+  const by = sameRow ? b.y + nodeH / 2 : b.y;
+  return { from: { x: ax + (sameRow ? 8 : 0), y: ay }, to: { x: bx - (sameRow ? 14 : 0), y: by } };
+}
+
 export class Flow extends Scene {
   override render(f: Frame, ctx: CanvasRenderingContext2D): void {
     const { params } = this.ctx;
     const lt = f.lt;
     ambient(ctx, this.ctx, f.t);
 
-    const nodes: Node[] = Array.isArray(params.nodes) ? params.nodes : [];
+    const { nodes, headline, kicker } = flowParams(params);
     if (nodes.length === 0) return;
-    const headline = params.headline ? String(params.headline) : '';
-    const kicker = params.kicker ? String(params.kicker) : '';
 
     if (headline) this.drawHeadline(ctx, headline, lt);
     if (kicker) this.drawKicker(ctx, kicker, { lt, hasHeadline: !!headline });
@@ -90,7 +129,7 @@ export class Flow extends Scene {
     const perRow = Math.ceil(stages / rows);
     const nodeW = Math.min(250, (W * 0.82 - (perRow - 1) * 70) / perRow);
     const nodeH = 96;
-    const rowY = (y: number) => (rows === 1 ? H * 0.52 - nodeH / 2 : (y === 0 ? H * 0.38 : H * 0.62) - nodeH / 2);
+    const rowY = (row: number) => rowCenter(rows, row, H) - nodeH / 2;
 
     const pos = Array.from({ length: stages }, (_, i) => {
       const row = rows === 1 ? 0 : Math.floor(i / perRow);
@@ -114,33 +153,14 @@ export class Flow extends Scene {
     const isPast = i < progress.active;
 
     ctx.save();
-    if (isFade(motion)) ctx.globalAlpha = appear;
-    else if (isPop(motion)) {
-      ctx.translate(x + nodeW / 2, y + nodeH / 2);
-      ctx.scale(appear, appear);
-      ctx.translate(-(x + nodeW / 2), -(y + nodeH / 2));
-    } else {
-      const dx = slideOffset(motion, (1 - appear) * 70);
-      ctx.globalAlpha = Math.min(1, appear * 1.4);
-      ctx.translate(dx, 0);
-    }
+    applyEntrance(ctx, motion, { x, y, w: nodeW, h: nodeH, appear });
 
     // pulse when the stage is active and mid-transition to the next
     const pulse = isActive ? Math.sin(progress.frac * Math.PI) : 0;
     if (isActive) panel(ctx, { x: x - 6 * pulse, y: y - 6 * pulse, w: nodeW + 12 * pulse, h: nodeH + 12 * pulse }, theme, { accent: theme.accent, radius: 18 });
     panel(ctx, { x, y, w: nodeW, h: nodeH }, theme, { accent: undefined, radius: 16 });
 
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
-    ctx.font = font(25, theme.fontDisplay, 600);
-    ctx.fillStyle = isActive ? theme.ink : isPast ? withAlpha(theme.ink, 0.72) : withAlpha(theme.ink, 0.45);
-    ctx.fillText(ellipsize(ctx, n.label, nodeW - 32), x + nodeW / 2, y + (n.sub ? nodeH / 2 - 8 : nodeH / 2 + 8));
-
-    if (n.sub) {
-      ctx.font = font(17, theme.fontMono, 400);
-      ctx.fillStyle = isActive ? theme.dim : theme.faint;
-      ctx.fillText(ellipsize(ctx, n.sub, nodeW - 32), x + nodeW / 2, y + nodeH / 2 + 20);
-    }
+    this.drawNodeText(ctx, n, { x, y, w: nodeW, h: nodeH }, { isActive, isPast });
 
     // stage index tag
     ctx.font = font(14, theme.fontMono, 500);
@@ -150,6 +170,22 @@ export class Flow extends Scene {
     ctx.restore();
   }
 
+  /** The node's label and optional sub line, dimmed the further they are from the active stage. */
+  private drawNodeText(ctx: CanvasRenderingContext2D, n: Node, rect: { x: number; y: number; w: number; h: number }, stage: { isActive: boolean; isPast: boolean }): void {
+    const { theme } = this.ctx;
+    const { x, y, w: nodeW, h: nodeH } = rect;
+    const { isActive, isPast } = stage;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = font(25, theme.fontDisplay, 600);
+    ctx.fillStyle = isActive ? theme.ink : withAlpha(theme.ink, isPast ? 0.72 : 0.45);
+    ctx.fillText(ellipsize(ctx, n.label, nodeW - 32), x + nodeW / 2, y + (n.sub ? nodeH / 2 - 8 : nodeH / 2 + 8));
+    if (!n.sub) return;
+    ctx.font = font(17, theme.fontMono, 400);
+    ctx.fillStyle = isActive ? theme.dim : theme.faint;
+    ctx.fillText(ellipsize(ctx, n.sub, nodeW - 32), x + nodeW / 2, y + nodeH / 2 + 20);
+  }
+
   /** The arrow from this node to the next one. */
   private drawLink(ctx: CanvasRenderingContext2D, layout: Layout, state: NodeState): void {
     const { theme } = this.ctx;
@@ -157,13 +193,8 @@ export class Flow extends Scene {
     const { index: i, progress } = state;
     const isActive = i === progress.active;
     const isPast = i < progress.active;
-    const a = layout.pos[i]!, b = layout.pos[i + 1]!;
-    const sameRow = Math.abs(a.y - b.y) < 1;
-    const ax = sameRow ? a.x + nodeW : a.x + nodeW / 2;
-    const ay = sameRow ? a.y + nodeH / 2 : a.y + nodeH;
-    const bx = sameRow ? b.x : b.x + nodeW / 2;
-    const by = sameRow ? b.y + nodeH / 2 : b.y;
+    const { from, to } = linkEnds(layout.pos[i]!, layout.pos[i + 1]!, { nodeW, nodeH });
     const on = isPast ? 1 : isActive ? ease.inOutCubic(progress.frac) : 0;
-    arrow(ctx, { x: ax + (sameRow ? 8 : 0), y: ay }, { x: bx - (sameRow ? 14 : 0), y: by }, { theme, progress: on, color: isActive || isPast ? withAlpha(theme.accent, 0.8) : undefined });
+    arrow(ctx, from, to, { theme, progress: on, color: isActive || isPast ? withAlpha(theme.accent, 0.8) : undefined });
   }
 }

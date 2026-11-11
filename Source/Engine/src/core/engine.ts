@@ -22,6 +22,17 @@ function captionFor(e: TimelineEntry): Caption {
   return { start: e.start + delay, end: Math.min(e.end - 0.4, e.start + delay + 4.5), fig: caption.fig, text: caption.text };
 }
 
+/** The brand shown in the HUD, with the house defaults. */
+function brandOf(spec: ShowSpec) {
+  return { name: spec.brand?.name ?? 'Cratis', product: spec.brand?.product, markUrl: spec.brand?.markUrl ?? 'fonts/cratis-mark.svg', hideMark: spec.brand?.hideMark };
+}
+
+/** Transition state: the incoming scene's first transitionDuration seconds composite over the previous. */
+function transitionProgress(cur: TimelineEntry, prev: TimelineEntry | null | undefined, t: number): number {
+  if (!prev || cur.transitionIn === 'cut') return 1;
+  return clamp((t - cur.start) / Math.max(1e-3, cur.transitionDuration));
+}
+
 interface Loaded { entry: TimelineEntry; scene: Scene | null; error?: string }
 
 export class MontageEngine {
@@ -64,7 +75,7 @@ export class MontageEngine {
 
   async init(): Promise<void> {
     await this.loadFonts();
-    if (this.spec.voiceover) await Promise.all([this.loadAudio(), this.loadLyrics()]);
+    await this.loadVoiceover();
     this.timeline = buildTimeline(this.spec, this.lyrics.lines.length ? this.lyrics : null, this.audio.duration ? this.audio : null);
 
     const captions: Caption[] = [];
@@ -73,13 +84,14 @@ export class MontageEngine {
       if (e.spec.caption) captions.push(captionFor(e));
     }
 
-    this.hud = new Hud(
-      this.theme, this.W, this.H,
-      { name: this.spec.brand?.name ?? 'Cratis', product: this.spec.brand?.product, markUrl: this.spec.brand?.markUrl ?? 'fonts/cratis-mark.svg', hideMark: this.spec.brand?.hideMark },
-      captions,
-    );
+    this.hud = new Hud(this.theme, this.W, this.H, brandOf(this.spec), captions);
     await this.hud.load();
     this.ready = true;
+  }
+
+  private async loadVoiceover(): Promise<void> {
+    if (!this.spec.voiceover) return;
+    await Promise.all([this.loadAudio(), this.loadLyrics()]);
   }
 
   private async loadFonts(): Promise<void> {
@@ -163,20 +175,11 @@ export class MontageEngine {
     const curIdx = this.timeline.indexOf(cur);
     const prev = curIdx > 0 ? this.timeline[curIdx - 1] : null;
 
-    // transition state: the incoming scene's first tDur seconds composite over the previous.
-    const tin = prev && cur.transitionIn !== 'cut'
-      ? clamp((t - cur.start) / Math.max(1e-3, cur.transitionDuration))
-      : 1;
+    const tin = transitionProgress(cur, prev, t);
     const transitioning = !!prev && tin < 1;
 
-    const [ctxA, ctxB] = this.ctxs;
+    this.drawLayers({ cur, prev: transitioning ? prev : null }, { t, seeked });
     const [cvA, cvB] = this.canvases;
-    if (transitioning && prev) {
-      this.drawScene(prev, ctxA, { time: Math.min(t, prev.end - 1e-3), seeked }); // outgoing holds its final frame
-      this.drawScene(cur, ctxB, { time: t, seeked });
-    } else {
-      this.drawScene(cur, ctxB, { time: Math.max(cur.start, Math.min(t, cur.end - 1e-3)), seeked });
-    }
 
     // final canvas: HUD + post
     const ctx = this.canvas.getContext('2d', { willReadFrequently: true })!;
@@ -187,6 +190,19 @@ export class MontageEngine {
     this.hud.draw(ctx, t, cur.type);
     postProcess(ctx, this.W, this.H, t);
     return cur.id;
+  }
+
+  /** Draw the incoming scene (and, mid-transition, the outgoing one) onto the layer canvases. */
+  private drawLayers(scenes: { cur: TimelineEntry; prev: TimelineEntry | null | undefined }, at: { t: number; seeked: boolean }): void {
+    const { cur, prev } = scenes;
+    const { t, seeked } = at;
+    const [ctxA, ctxB] = this.ctxs;
+    if (prev) {
+      this.drawScene(prev, ctxA, { time: Math.min(t, prev.end - 1e-3), seeked }); // outgoing holds its final frame
+      this.drawScene(cur, ctxB, { time: t, seeked });
+    } else {
+      this.drawScene(cur, ctxB, { time: Math.max(cur.start, Math.min(t, cur.end - 1e-3)), seeked });
+    }
   }
 
   /** The entry playing at t. Unvoiced gaps belong to the preceding scene, not the show's endcard. */
