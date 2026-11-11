@@ -16,7 +16,7 @@ import { createServer, type Server } from 'node:http';
 import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';
 import { extname, join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 
 const APP = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -119,23 +119,73 @@ async function sheet(page: any, times: number[], cols: number, out: string) {
   console.log(out);
 }
 
-async function video(page: any, pkgBase: string, from: number, to: number, fps: number, out: string) {
+/** Counts frames acknowledged by the encoder; shared between the sink, watchdog and result checks. */
+interface Progress { frames: number; total: number; t0: number }
+
+/** ffmpeg arguments for raw RGBA frames on stdin (plus optional voiceover) into `out`. */
+function ffmpegArgs(spec: { W: number; H: number; fps: number }, audio: { path: string; from: number; to: number } | null, out: string): string[] {
+  const args = ['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${spec.W}x${spec.H}`, '-r', String(spec.fps), '-i', 'pipe:0'];
+  if (audio) args.push('-ss', String(audio.from), '-t', String(audio.to - audio.from), '-i', audio.path);
+  // frames are sRGB; tag BT.709 so players and YouTube decode the colors we drew
+  args.push('-vf', 'scale=out_color_matrix=bt709,setparams=color_primaries=bt709:color_trc=bt709',
+    '-c:v', 'libx264', '-preset', opt('preset', 'slow')!, '-crf', opt('crf', '17')!, '-pix_fmt', 'yuv420p',
+    '-x264-params', 'aq-mode=3');
+  if (audio) args.push('-c:a', 'aac', '-b:a', '256k', '-shortest');
+  args.push('-movflags', '+faststart', out);
+  return args;
+}
+
+/** Accept RGBA frames over the socket and feed them to the encoder, one at a time and in order. */
+function pipeFramesToEncoder(wss: WebSocketServer, ff: ChildProcess, progress: Progress, size: { W: number; H: number }): void {
+  const { W, H } = size;
+  wss.on('connection', (ws) => {
+    // Acknowledge only after the encoder has accepted the complete frame. Serial writes
+    // preserve frame order and honour stdin backpressure rather than buffering a whole film.
+    let queue = Promise.resolve();
+    ff.stdin!.on('error', () => ws.close());
+    ff.on('close', () => { if (progress.frames < progress.total) ws.close(); });
+    ws.on('message', (data: Buffer, isBinary: boolean) => {
+      queue = queue.then(async () => {
+        if (!isBinary || data.length !== W * H * 4) throw new Error('Invalid RGBA frame payload');
+        if (!ff.stdin!.write(data)) await once(ff.stdin!, 'drain');
+        progress.frames++;
+        ws.send(String(progress.frames));
+        reportProgress(progress);
+      }).catch((error) => { console.error(error); ws.close(); });
+    });
+  });
+}
+
+function reportProgress(progress: Progress): void {
+  const { frames, total, t0 } = progress;
+  if (frames % 60 !== 0 && frames !== total) return;
+  const el = (performance.now() - t0) / 1000;
+  process.stdout.write(`\r${frames}/${total} frames  ${(frames / el).toFixed(1)} fps  eta ${Math.round((total - frames) / Math.max(frames / el, 0.01))}s   `);
+}
+
+/** Rejects when the encoder stops acknowledging frames for 60 seconds. */
+function startWatchdog(progress: Progress): { stalled: Promise<never>; stop: () => void } {
+  let lastProgress = performance.now();
+  let lastFrames = progress.frames;
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const stalled = new Promise<never>((_, reject) => {
+    timer = setInterval(() => {
+      if (progress.frames !== lastFrames) { lastFrames = progress.frames; lastProgress = performance.now(); }
+      else if (performance.now() - lastProgress > 60000) reject(new Error(`Render stalled: no encoder acknowledgement for 60 seconds (${progress.frames}/${progress.total} frames)`));
+    }, 5000);
+  });
+  return { stalled, stop: () => { if (timer) clearInterval(timer); } };
+}
+
+async function video(page: any, pkgBase: string, range: { from: number; to: number; fps: number }, out: string) {
+  const { from, to, fps } = range;
   mkdirSync(dirname(out), { recursive: true });
   const W: number = await page.evaluate(() => (window as any).__montage.width);
   const H: number = await page.evaluate(() => (window as any).__montage.height);
-  const crf = opt('crf', '17')!;
   const audioPath = !flag('noaudio') ? join(pkgBase, 'audio/voiceover.mp3') : null;
-  const hasAudio = audioPath ? existsSync(audioPath) : false;
+  const audio = audioPath && existsSync(audioPath) ? { path: audioPath, from, to } : null;
 
-  const args = ['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${W}x${H}`, '-r', String(fps), '-i', 'pipe:0'];
-  if (hasAudio && audioPath) args.push('-ss', String(from), '-t', String(to - from), '-i', audioPath);
-  // frames are sRGB; tag BT.709 so players and YouTube decode the colors we drew
-  args.push('-vf', 'scale=out_color_matrix=bt709,setparams=color_primaries=bt709:color_trc=bt709',
-    '-c:v', 'libx264', '-preset', opt('preset', 'slow')!, '-crf', crf, '-pix_fmt', 'yuv420p',
-    '-x264-params', 'aq-mode=3');
-  if (hasAudio) args.push('-c:a', 'aac', '-b:a', '256k', '-shortest');
-  args.push('-movflags', '+faststart', out);
-
+  const args = ffmpegArgs({ W, H, fps }, audio, out);
   const ff = spawn(args[0]!, args.slice(1), { stdio: ['pipe', 'inherit', 'pipe'] });
   let encoderErrors = '';
   ff.stderr!.on('data', (chunk: Buffer) => {
@@ -143,45 +193,17 @@ async function video(page: any, pkgBase: string, from: number, to: number, fps: 
     process.stderr.write(chunk);
   });
   const encoded = once(ff, 'close');
-  let frames = 0;
-  const total = Math.round(to * fps) - Math.round(from * fps);
-  const t0 = performance.now();
+  const progress: Progress = { frames: 0, total: Math.round(to * fps) - Math.round(from * fps), t0: performance.now() };
 
   const wss = new WebSocketServer({ port: 0, host: '127.0.0.1', maxPayload: W * H * 4 + 1024 });
   await new Promise<void>((res) => wss.on('listening', () => res()));
   const wsPort = (wss.address() as any).port;
-  wss.on('connection', (ws) => {
-    // Acknowledge only after the encoder has accepted the complete frame. Serial writes
-    // preserve frame order and honour stdin backpressure rather than buffering a whole film.
-    let queue = Promise.resolve();
-    ff.stdin!.on('error', () => ws.close());
-    ff.on('close', () => { if (frames < total) ws.close(); });
-    ws.on('message', (data: Buffer, isBinary: boolean) => {
-      queue = queue.then(async () => {
-        if (!isBinary || data.length !== W * H * 4) throw new Error('Invalid RGBA frame payload');
-        if (!ff.stdin!.write(data)) await once(ff.stdin!, 'drain');
-        frames++;
-        ws.send(String(frames));
-        if (frames % 60 === 0 || frames === total) {
-          const el = (performance.now() - t0) / 1000;
-          process.stdout.write(`\r${frames}/${total} frames  ${(frames / el).toFixed(1)} fps  eta ${Math.round((total - frames) / Math.max(frames / el, 0.01))}s   `);
-        }
-      }).catch((error) => { console.error(error); ws.close(); });
-    });
-  });
+  pipeFramesToEncoder(wss, ff, progress, { W, H });
 
-  let lastProgress = performance.now();
-  let lastFrames = frames;
-  let watchdog: ReturnType<typeof setInterval> | undefined;
-  const stalled = new Promise<never>((_, reject) => {
-    watchdog = setInterval(() => {
-      if (frames !== lastFrames) { lastFrames = frames; lastProgress = performance.now(); }
-      else if (performance.now() - lastProgress > 60000) reject(new Error(`Render stalled: no encoder acknowledgement for 60 seconds (${frames}/${total} frames)`));
-    }, 5000);
-  });
+  const watchdog = startWatchdog(progress);
   const encoderStopped = encoded.then(([code, signal]) => {
-    if (code !== 0 || frames < total) {
-      throw new Error(`Encoder exited before the frame stream completed: code=${code}, signal=${signal}, frames=${frames}/${total}\n${encoderErrors}`);
+    if (code !== 0 || progress.frames < progress.total) {
+      throw new Error(`Encoder exited before the frame stream completed: code=${code}, signal=${signal}, frames=${progress.frames}/${progress.total}\n${encoderErrors}`);
     }
     return new Promise<never>(() => {});
   });
@@ -193,18 +215,48 @@ async function video(page: any, pkgBase: string, from: number, to: number, fps: 
         from, to, fps, ws: `ws://127.0.0.1:${wsPort}`,
       }),
       encoderStopped,
-      stalled,
+      watchdog.stalled,
     ]);
-    if (frames !== total) throw new Error(`Incomplete render: ${frames}/${total} frames`);
+    if (progress.frames !== progress.total) throw new Error(`Incomplete render: ${progress.frames}/${progress.total} frames`);
     ff.stdin!.end();
-    const [exitCode] = await Promise.race([encoded, stalled]);
+    const [exitCode] = await Promise.race([encoded, watchdog.stalled]);
     if (exitCode !== 0) throw new Error(`ffmpeg failed with exit code ${exitCode}`);
-    console.log(`\nwrote ${out} (${frames} frames in ${((performance.now() - t0) / 1000).toFixed(1)}s)`);
+    console.log(`\nwrote ${out} (${progress.frames} frames in ${((performance.now() - progress.t0) / 1000).toFixed(1)}s)`);
   } finally {
-    if (watchdog) clearInterval(watchdog);
+    watchdog.stop();
     for (const c of wss.clients) c.terminate();
     wss.close();
     if (ff.exitCode === null) ff.kill();
+  }
+}
+
+async function info(page: any) {
+  const result = await page.evaluate(() => ({
+    duration: (window as any).__montage.duration(),
+    width: (window as any).__montage.width,
+    height: (window as any).__montage.height,
+    timeline: (window as any).__montage.timeline(),
+  }));
+  console.log(JSON.stringify(result, null, 2));
+}
+
+/** Run the selected mode against the booted page. */
+async function runMode(page: any, pkg: { dir: string | null; opt: string }) {
+  if (mode === 'stills') {
+    const times = (opt('t', '0')!).split(',').map(Number);
+    await stills(page, times, resolve(opt('out', 'out/stills')!));
+  } else if (mode === 'sheet') {
+    const from = +opt('from', '0')!, to = +opt('to', '10')!, n = +opt('n', '12')!;
+    const times = Array.from({ length: n }, (_, i) => from + ((to - from) * i) / Math.max(1, n - 1));
+    await sheet(page, times, +opt('cols', '4')!, resolve(opt('out', `out/sheets/sheet_${from}-${to}.png`)!));
+  } else if (mode === 'video') {
+    const dur: number = await page.evaluate(() => (window as any).__montage.duration());
+    await video(page, pkg.dir ?? pkg.opt, { from: +opt('from', '0')!, to: +opt('to', String(dur))!, fps: +opt('fps', '60')! }, resolve(opt('out', 'out/show.mp4')!));
+  } else if (mode === 'info') {
+    await info(page);
+  } else {
+    console.error(`unknown mode: ${mode} (stills | sheet | video | info)`);
+    process.exitCode = 1;
   }
 }
 
@@ -225,28 +277,7 @@ const query = isUrl ? `&pkg=${encodeURIComponent(pkgOpt)}` : '&pkg=/pkg';
 try {
   const { browser, page, logs } = await openPage(server.url, query);
   try {
-    if (mode === 'stills') {
-      const times = (opt('t', '0')!).split(',').map(Number);
-      await stills(page, times, resolve(opt('out', 'out/stills')!));
-    } else if (mode === 'sheet') {
-      const from = +opt('from', '0')!, to = +opt('to', '10')!, n = +opt('n', '12')!;
-      const times = Array.from({ length: n }, (_, i) => from + ((to - from) * i) / Math.max(1, n - 1));
-      await sheet(page, times, +opt('cols', '4')!, resolve(opt('out', `out/sheets/sheet_${from}-${to}.png`)!));
-    } else if (mode === 'video') {
-      const dur: number = await page.evaluate(() => (window as any).__montage.duration());
-      await video(page, pkgDir ?? pkgOpt, +opt('from', '0')!, +opt('to', String(dur))!, +opt('fps', '60')!, resolve(opt('out', 'out/show.mp4')!));
-    } else if (mode === 'info') {
-      const info = await page.evaluate(() => ({
-        duration: (window as any).__montage.duration(),
-        width: (window as any).__montage.width,
-        height: (window as any).__montage.height,
-        timeline: (window as any).__montage.timeline(),
-      }));
-      console.log(JSON.stringify(info, null, 2));
-    } else {
-      console.error(`unknown mode: ${mode} (stills | sheet | video | info)`);
-      process.exitCode = 1;
-    }
+    await runMode(page, { dir: pkgDir, opt: pkgOpt });
     if (logs.length) console.error('BROWSER LOG:\n' + logs.slice(0, 40).join('\n'));
   } finally {
     await browser.close();
