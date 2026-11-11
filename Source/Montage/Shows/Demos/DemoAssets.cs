@@ -141,7 +141,7 @@ public static class DemoAssets
     /// <summary>
     /// The assets per demo show id.
     /// </summary>
-    static readonly Dictionary<string, IReadOnlyDictionary<string, string>> ForDemo = new()
+    static readonly Dictionary<string, IReadOnlyDictionary<string, string>> _forDemo = new()
     {
         [DemoShows.AssemblyLanguageId] = new Dictionary<string, string>
         {
@@ -164,7 +164,7 @@ public static class DemoAssets
     /// <param name="showId">The demo show.</param>
     public static void Write(ShowArtifactStore artifactStore, ShowId showId)
     {
-        if (!ForDemo.TryGetValue(showId.ToString(), out var assets)) return;
+        if (!_forDemo.TryGetValue(showId.ToString(), out var assets)) return;
         foreach (var (name, content) in assets)
         {
             ShowArtifactStore.WriteText(Path.Combine(artifactStore.AssetsFolderFor(showId), "images", name), content);
