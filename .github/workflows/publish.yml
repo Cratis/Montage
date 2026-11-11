@@ -31,6 +31,10 @@ jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # The release action also comments on and closes the issues a release delivers.
+    permissions:
+      contents: write
+      issues: write
     outputs:
       version: ${{ steps.release.outputs.version }}
       publish: ${{ steps.release.outputs.should-publish }}
