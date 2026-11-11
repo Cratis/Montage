@@ -174,7 +174,7 @@ export class ImageScene extends Scene {
     const { theme } = this.ctx;
     const { rect: p, delay, lt, alpha } = at;
     const ck = ease.outCubic(clamp(inv(delay + 0.35, delay + 0.8, lt)));
-    if (ck <= 0) return;
+    if (!(ck > 0)) return;
     ctx.save();
     ctx.globalAlpha = alpha * ck;
     ctx.font = font(20, theme.fontMono, 500);
@@ -207,7 +207,7 @@ export class ImageScene extends Scene {
   /** One centered caption line; skipped while it is still invisible. */
   private drawCaptionLine(ctx: CanvasRenderingContext2D, line: { alpha: number; size: number; text: string; maxW: number; y: number }, color: string, face: 'display' | 'body'): void {
     const { W, theme } = this.ctx;
-    if (line.alpha <= 0) return;
+    if (!(line.alpha > 0)) return;
     ctx.save();
     ctx.globalAlpha = line.alpha;
     ctx.font = face === 'display' ? font(line.size, theme.fontDisplay, 600) : font(line.size, theme.fontBody, 400);

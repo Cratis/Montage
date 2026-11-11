@@ -118,7 +118,7 @@ export class Code extends Scene {
     const { title, kicker } = text;
     const { py, lt } = at;
     const hk = ease.outCubic(clamp(inv(0.05, 0.5, lt)));
-    if (hk <= 0) return;
+    if (!(hk > 0)) return;
     ctx.save();
     ctx.globalAlpha = hk;
     if (kicker) eyebrow(ctx, kicker, { x: W / 2, y: py - 46 }, { theme, align: 'center', size: 17 });

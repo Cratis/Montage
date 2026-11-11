@@ -87,7 +87,7 @@ export class Steps extends Scene {
   private drawHeadline(ctx: CanvasRenderingContext2D, headline: string, lt: number): void {
     const { W, H, theme } = this.ctx;
     const hk = ease.outCubic(clamp(inv(0.1, 0.7, lt)));
-    if (hk <= 0) return;
+    if (!(hk > 0)) return;
     ctx.save();
     ctx.globalAlpha = hk;
     ctx.font = font(54, theme.fontDisplay, 600);

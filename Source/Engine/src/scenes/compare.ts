@@ -55,7 +55,7 @@ export class Compare extends Scene {
   private drawHeadline(ctx: CanvasRenderingContext2D, headline: string, lt: number): void {
     const { W, H, theme } = this.ctx;
     const hk = ease.outCubic(clamp(inv(0.05, 0.6, lt)));
-    if (hk <= 0) return;
+    if (!(hk > 0)) return;
     ctx.save();
     ctx.globalAlpha = hk;
     ctx.font = font(46, theme.fontDisplay, 600);
@@ -130,7 +130,7 @@ export class Compare extends Scene {
   private drawVerdict(ctx: CanvasRenderingContext2D, verdict: string, at: { lt: number; y: number }): void {
     const { W, theme } = this.ctx;
     const vk = ease.outCubic(clamp(inv(0.9, 1.6, at.lt)));
-    if (vk <= 0) return;
+    if (!(vk > 0)) return;
     ctx.save();
     ctx.globalAlpha = vk;
     ctx.translate(0, (1 - vk) * 14);

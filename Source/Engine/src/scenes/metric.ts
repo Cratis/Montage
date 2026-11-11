@@ -63,7 +63,7 @@ export class Metric extends Scene {
   private drawLabel(ctx: CanvasRenderingContext2D, label: string, lt: number): void {
     const { W, H, theme } = this.ctx;
     const lk = ease.outCubic(clamp(inv(0.5, 1.1, lt)));
-    if (lk <= 0) return;
+    if (!(lk > 0)) return;
     ctx.save();
     ctx.globalAlpha = lk * 0.95;
     ctx.font = font(30, theme.fontBody, 400);
@@ -77,7 +77,7 @@ export class Metric extends Scene {
   private drawDelta(ctx: CanvasRenderingContext2D, delta: string, lt: number): void {
     const { W, H, theme } = this.ctx;
     const dk = ease.outBack(clamp(inv(0.9, 1.4, lt)));
-    if (dk <= 0) return;
+    if (!(dk > 0)) return;
     ctx.save();
     ctx.translate(W / 2, H * 0.52 + 96);
     ctx.scale(dk, dk);
@@ -90,7 +90,7 @@ export class Metric extends Scene {
   private drawSpark(ctx: CanvasRenderingContext2D, spark: number[], f: Frame): void {
     const { W, H, theme } = this.ctx;
     const sk = ease.inOutCubic(clamp(inv(0.7, 2.2, f.lt)));
-    if (sk <= 0) return;
+    if (!(sk > 0)) return;
     const sw = W * 0.3, sh = 90;
     const sx = W / 2 - sw / 2, sy = H * 0.72;
     const min = Math.min(...spark), max = Math.max(...spark);

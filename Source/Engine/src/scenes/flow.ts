@@ -102,7 +102,7 @@ export class Flow extends Scene {
   private drawHeadline(ctx: CanvasRenderingContext2D, headline: string, lt: number): void {
     const { W, H, theme } = this.ctx;
     const hk = ease.outCubic(clamp(inv(0.05, 0.6, lt)));
-    if (hk <= 0) return;
+    if (!(hk > 0)) return;
     ctx.save();
     ctx.globalAlpha = hk;
     ctx.font = font(44, theme.fontDisplay, 600);
@@ -116,7 +116,7 @@ export class Flow extends Scene {
   private drawKicker(ctx: CanvasRenderingContext2D, kicker: string, at: { lt: number; hasHeadline: boolean }): void {
     const { W, H, theme } = this.ctx;
     const kk = ease.outCubic(clamp(inv(0.02, 0.4, at.lt)));
-    if (kk <= 0) return;
+    if (!(kk > 0)) return;
     ctx.save();
     ctx.globalAlpha = kk;
     eyebrow(ctx, kicker, { x: W / 2, y: (at.hasHeadline ? H * 0.15 : H * 0.18) - 38 }, { theme, align: 'center', size: 17 });

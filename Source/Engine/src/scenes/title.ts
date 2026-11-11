@@ -86,7 +86,7 @@ export class Title extends Scene {
     const { motion, lt, size, totalWords, index, width: wordW } = reveal;
     const delay = 0.25 + index * (1.4 / totalWords);
     const k = enter(motion, lt, delay, delay + 0.7);
-    if (k <= 0) return;
+    if (!(k > 0)) return;
     const p = Math.min(k, 1);
     ctx.save();
     ctx.translate(at.x + wordW / 2, at.y);
@@ -107,7 +107,7 @@ export class Title extends Scene {
   private drawUnderline(ctx: CanvasRenderingContext2D, layout: Headline, lt: number): void {
     const { W, theme } = this.ctx;
     const uk = ease.inOutCubic(clamp(inv(0.9, 1.6, lt)));
-    if (uk <= 0) return;
+    if (!(uk > 0)) return;
     const uw = Math.min(W * 0.09, 140) * uk;
     ctx.fillStyle = theme.accent;
     ctx.fillRect(layout.centerX - uw / 2, layout.y0 + layout.blockH + 26, uw, 4);
@@ -116,7 +116,7 @@ export class Title extends Scene {
   private drawKicker(ctx: CanvasRenderingContext2D, layout: Headline, kicker: string, lt: number): void {
     const { W, theme } = this.ctx;
     const kk = ease.outCubic(clamp(inv(0.05, 0.5, lt)));
-    if (kk <= 0) return;
+    if (!(kk > 0)) return;
     ctx.save();
     ctx.globalAlpha = kk;
     ctx.translate(0, (1 - kk) * 14);
@@ -127,7 +127,7 @@ export class Title extends Scene {
   private drawSub(ctx: CanvasRenderingContext2D, layout: Headline, sub: string, lt: number): void {
     const { W, theme } = this.ctx;
     const sk = ease.outCubic(clamp(inv(1.1, 1.7, lt)));
-    if (sk <= 0) return;
+    if (!(sk > 0)) return;
     ctx.save();
     ctx.globalAlpha = sk * 0.92;
     ctx.font = font(Math.max(22, W * 0.0145), theme.fontBody, 400);

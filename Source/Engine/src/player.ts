@@ -144,7 +144,7 @@ export class Player {
   private stopOrLoopAtEnd() {
     const range = this.plateRange ?? (this.loopPlate ? this.plateAt(this.t) : null);
     const end = range ? range.end : this.engine.duration;
-    if (this.t < end) return;
+    if (!(this.t >= end)) return;
     if (range && this.loopPlate) {
       this.t = range.start;
       if (this.audio) this.audio.currentTime = this.t;

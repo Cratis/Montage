@@ -69,7 +69,7 @@ export class Chart extends Scene {
   private drawTitle(ctx: CanvasRenderingContext2D, title: string, lt: number): void {
     const { W, H, theme } = this.ctx;
     const hk = ease.outCubic(clamp(inv(0.05, 0.6, lt)));
-    if (hk <= 0) return;
+    if (!(hk > 0)) return;
     ctx.save();
     ctx.globalAlpha = hk;
     ctx.font = font(42, theme.fontDisplay, 600);
@@ -82,7 +82,7 @@ export class Chart extends Scene {
   private drawKicker(ctx: CanvasRenderingContext2D, kicker: string, at: { lt: number; hasTitle: boolean }): void {
     const { W, H, theme } = this.ctx;
     const kk = ease.outCubic(clamp(inv(0.02, 0.4, at.lt)));
-    if (kk <= 0) return;
+    if (!(kk > 0)) return;
     ctx.save();
     ctx.globalAlpha = kk;
     eyebrow(ctx, kicker, { x: W / 2, y: (at.hasTitle ? H * 0.16 : H * 0.19) - 36 }, { theme, align: 'center', size: 17 });

@@ -76,7 +76,7 @@ export class Statement extends Scene {
     const beforeW = ctx.measureText(line.text.slice(0, idx)).width;
     const phraseW = ctx.measureText(phrase).width;
     const shownInPhrase = Math.max(0, shown - idx);
-    if (shownInPhrase <= 0) return;
+    if (!(shownInPhrase > 0)) return;
     ctx.save();
     ctx.beginPath();
     ctx.rect(-ctx.measureText(line.text).width / 2 + beforeW, -size, phraseW * (shownInPhrase / phrase.length) + 2, size * 1.6);
@@ -89,7 +89,7 @@ export class Statement extends Scene {
   private drawKicker(ctx: CanvasRenderingContext2D, kicker: string, at: { lt: number; y: number }): void {
     const { W, theme } = this.ctx;
     const kk = ease.outCubic(clamp(inv(0.05, 0.5, at.lt)));
-    if (kk <= 0) return;
+    if (!(kk > 0)) return;
     ctx.save();
     ctx.globalAlpha = kk;
     eyebrow(ctx, kicker, { x: W / 2, y: at.y }, { theme, align: 'center', size: Math.max(18, W * 0.0115) });

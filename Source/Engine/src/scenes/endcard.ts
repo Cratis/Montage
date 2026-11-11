@@ -38,7 +38,7 @@ export class Endcard extends Scene {
     const { W, H, theme } = this.ctx;
     const { brandName, product } = brand;
     const bk = ease.outCubic(clamp(inv(0.2, 0.8, lt)));
-    if (bk <= 0) return;
+    if (!(bk > 0)) return;
     ctx.save();
     ctx.globalAlpha = bk;
     const size = W * 0.018;
@@ -76,7 +76,7 @@ export class Endcard extends Scene {
   private drawHeadlineLine(ctx: CanvasRenderingContext2D, text: string, at: { y: number; size: number; k: number; motion: MotionSpec }): void {
     const { W, theme } = this.ctx;
     const { y, size, k, motion } = at;
-    if (k <= 0) return;
+    if (!(k > 0)) return;
     const p = Math.min(k, 1);
     ctx.save();
     ctx.globalAlpha = p;
@@ -99,7 +99,7 @@ export class Endcard extends Scene {
     const { W, H, theme } = this.ctx;
     const { lt, hasHeadline } = when;
     const ck = ease.outCubic(clamp(inv(1.2, 1.8, lt)));
-    if (ck <= 0) return;
+    if (!(ck > 0)) return;
     ctx.save();
     ctx.globalAlpha = ck;
     ctx.font = font(24, theme.fontMono, 400);
@@ -118,7 +118,7 @@ export class Endcard extends Scene {
   private drawFadeOut(ctx: CanvasRenderingContext2D, progress: number): void {
     const { W, H, theme } = this.ctx;
     const outK = clamp(inv(this.ctx.spec.params?.fadeOutStart ?? 0.92, 1, progress));
-    if (outK <= 0) return;
+    if (!(outK > 0)) return;
     ctx.fillStyle = theme.bg;
     ctx.globalAlpha = outK;
     ctx.fillRect(0, 0, W, H);
