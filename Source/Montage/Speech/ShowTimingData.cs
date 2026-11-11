@@ -50,42 +50,8 @@ public static class ShowTimingData
 
         foreach (var (sceneId, text, windowStart, windowEnd) in lines)
         {
-            var lineWords = SplitWords(text);
-            var wordDocs = new List<object>();
-            var lineStart = -1d;
-            var lineEnd = -1d;
-
-            foreach (var lw in lineWords)
-            {
-                if (wordIndex < words.Count)
-                {
-                    var w = words[wordIndex++];
-                    wordDocs.Add(new { w = lw, start = Round(w.Start), end = Round(w.End) });
-                    if (lineStart < 0) lineStart = w.Start;
-                    lineEnd = w.End;
-                }
-                else
-                {
-                    // no transcription for this word: estimate from the remaining window
-                    var remaining = lineWords.Length - wordDocs.Count;
-                    var span = Math.Max(0.2, windowEnd - Math.Max(lineEnd, windowStart) - 0.15);
-                    var dur = Math.Clamp(span / Math.Max(remaining, 1), 0.12, 0.7);
-                    var start = Math.Max(lineEnd, windowStart);
-                    wordDocs.Add(new { w = lw, start = Round(start), end = Round(start + dur) });
-                    if (lineStart < 0) lineStart = start;
-                    lineEnd = start + dur;
-                }
-            }
-
-            if (wordDocs.Count == 0) continue;
-            lineDocs.Add(new
-            {
-                text,
-                sceneId,
-                start = Round(lineStart),
-                end = Round(lineEnd),
-                words = wordDocs,
-            });
+            var line = BuildLine(new LyricLine(sceneId, text, windowStart, windowEnd), words, ref wordIndex);
+            if (line is not null) lineDocs.Add(line);
         }
 
         return JsonSerializer.Serialize(new { lines = lineDocs }, _json);
@@ -101,6 +67,59 @@ public static class ShowTimingData
     {
         var (samples, sampleRate) = Wav.ReadMonoSamples(wavPath);
         const int fps = 100;
+        var envelope = BuildEnvelope(samples, sampleRate, fps);
+        var onsets = BuildOnsets(lyricsJson, envelope, fps);
+
+        return JsonSerializer.Serialize(
+            new
+            {
+                duration = Round(samples.Length / (double)sampleRate),
+                fps,
+                features = new { rms = envelope },
+                onsets = new { vocal = onsets },
+            },
+            _json);
+    }
+
+    static object? BuildLine(LyricLine source, IReadOnlyList<TranscribedWord> words, ref int wordIndex)
+    {
+        var lineWords = SplitWords(source.Text);
+        var wordDocs = new List<object>();
+        var lineStart = -1d;
+        var lineEnd = -1d;
+
+        foreach (var lw in lineWords)
+        {
+            var (start, end) = wordIndex < words.Count
+                ? (words[wordIndex].Start, words[wordIndex++].End)
+                : EstimateWord(lineWords.Length - wordDocs.Count, source, lineEnd);
+            wordDocs.Add(new { w = lw, start = Round(start), end = Round(end) });
+            if (lineStart < 0) lineStart = start;
+            lineEnd = end;
+        }
+
+        if (wordDocs.Count == 0) return null;
+        return new
+        {
+            text = source.Text,
+            sceneId = source.SceneId,
+            start = Round(lineStart),
+            end = Round(lineEnd),
+            words = wordDocs,
+        };
+    }
+
+    // no transcription for this word: estimate from the remaining window
+    static (double Start, double End) EstimateWord(int remaining, LyricLine source, double lineEnd)
+    {
+        var start = Math.Max(lineEnd, source.WindowStart);
+        var span = Math.Max(0.2, source.WindowEnd - start - 0.15);
+        var dur = Math.Clamp(span / Math.Max(remaining, 1), 0.12, 0.7);
+        return (start, start + dur);
+    }
+
+    static double[] BuildEnvelope(float[] samples, int sampleRate, int fps)
+    {
         var envelopeLength = Math.Max(1, (int)Math.Ceiling(samples.Length / (double)sampleRate * fps));
         var envelope = new double[envelopeLength];
         var framesPerEnvelope = sampleRate / (double)fps;
@@ -118,30 +137,26 @@ public static class ShowTimingData
             var rms = count > 0 ? Math.Sqrt(sum / count) : 0;
             envelope[i] = Round(Math.Clamp(rms * 4.0, 0, 1)); // normalize speech levels into a usable 0..1
         }
+        return envelope;
+    }
 
-        // word onsets from the lyrics, strength from the envelope at the onset
+    // word onsets from the lyrics, strength from the envelope at the onset
+    static List<object> BuildOnsets(string lyricsJson, double[] envelope, int fps)
+    {
         var onsets = new List<object>();
         using var lyricsDoc = JsonDocument.Parse(lyricsJson);
-        foreach (var line in lyricsDoc.RootElement.GetProperty("lines").EnumerateArray())
+        var wordStarts = lyricsDoc.RootElement.GetProperty("lines").EnumerateArray()
+            .SelectMany(line => line.GetProperty("words").EnumerateArray())
+            .Select(word => word.GetProperty("start").GetDouble());
+        foreach (var start in wordStarts)
         {
-            foreach (var word in line.GetProperty("words").EnumerateArray())
-            {
-                var start = word.GetProperty("start").GetDouble();
-                var idx = Math.Clamp((int)(start * fps), 0, envelopeLength - 1);
-                onsets.Add(new[] { Round(start), envelope[idx] });
-            }
+            var idx = Math.Clamp((int)(start * fps), 0, envelope.Length - 1);
+            onsets.Add(new[] { Round(start), envelope[idx] });
         }
-
-        return JsonSerializer.Serialize(
-            new
-            {
-                duration = Round(samples.Length / (double)sampleRate),
-                fps,
-                features = new { rms = envelope },
-                onsets = new { vocal = onsets },
-            },
-            _json);
+        return onsets;
     }
+
+    sealed record LyricLine(string SceneId, string Text, double WindowStart, double WindowEnd);
 
     static double Round(double v) => Math.Round(v, 3, MidpointRounding.AwayFromZero);
 

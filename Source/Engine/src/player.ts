@@ -56,18 +56,22 @@ export class Player {
   }
 
   private key(e: KeyboardEvent) {
-    if ((e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'TEXTAREA') return;
-    switch (e.key) {
-      case ' ': e.preventDefault(); this.toggle(); break;
-      case 'ArrowRight': this.seek(this.t + (e.shiftKey ? 5 : 1)); break;
-      case 'ArrowLeft': this.seek(this.t - (e.shiftKey ? 5 : 1)); break;
-      case ',': this.seek(this.t - 1 / this.engine.fps); break;
-      case '.': this.seek(this.t + 1 / this.engine.fps); break;
-      case '[': this.jumpPlate(-1); break;
-      case ']': this.jumpPlate(1); break;
-      case 'l': this.loopPlate = !this.loopPlate; break;
-      case 'h': this.hudHidden = !this.hudHidden; this.ui.style.display = this.hudHidden ? 'none' : ''; break;
-    }
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    const step = e.shiftKey ? 5 : 1;
+    const frame = 1 / this.engine.fps;
+    const actions: Record<string, () => void> = {
+      ' ': () => { e.preventDefault(); this.toggle(); },
+      ArrowRight: () => this.seek(this.t + step),
+      ArrowLeft: () => this.seek(this.t - step),
+      ',': () => this.seek(this.t - frame),
+      '.': () => this.seek(this.t + frame),
+      '[': () => this.jumpPlate(-1),
+      ']': () => this.jumpPlate(1),
+      l: () => { this.loopPlate = !this.loopPlate; },
+      h: () => { this.hudHidden = !this.hudHidden; this.ui.style.display = this.hudHidden ? 'none' : ''; },
+    };
+    if (Object.prototype.hasOwnProperty.call(actions, e.key)) actions[e.key]!();
   }
 
   /** Play exactly one plate: seek to its start, confine to its window, stop at its end (or loop).
@@ -120,22 +124,32 @@ export class Player {
 
   private tick() {
     this.raf = requestAnimationFrame(this.tick);
-    if (this.playing) {
-      // wall clock, not the rAF timestamp - some environments hand out frozen timestamps
-      const now = performance.now();
-      const dt = (now - this.lastNow) / 1000;
-      this.lastNow = now;
-      this.t += dt;
-      // pin to the voice only while it is actually playing - when the browser blocks
-      // autoplay the audio sits at zero and would freeze the whole show on frame one
-      if (this.audio && !this.audio.paused && Math.abs(this.audio.currentTime - this.t) > 0.25) this.t = this.audio.currentTime;
-      const range = this.plateRange ?? (this.loopPlate ? this.plateAt(this.t) : null);
-      const end = range ? range.end : this.engine.duration;
-      if (this.t >= end) {
-        if (range && this.loopPlate) { this.t = range.start; if (this.audio) this.audio.currentTime = this.t; }
-        else { this.t = end; this.playing = false; this.audio?.pause(); this.syncPlayBtn(); }
-      }
-      this.render();
+    if (!this.playing) return;
+    // wall clock, not the rAF timestamp - some environments hand out frozen timestamps
+    const now = performance.now();
+    const dt = (now - this.lastNow) / 1000;
+    this.lastNow = now;
+    this.t += dt;
+    this.pinToVoice();
+    this.stopOrLoopAtEnd();
+    this.render();
+  }
+
+  /** Pin to the voice only while it is actually playing - when the browser blocks
+   *  autoplay the audio sits at zero and would freeze the whole show on frame one. */
+  private pinToVoice() {
+    if (this.audio && !this.audio.paused && Math.abs(this.audio.currentTime - this.t) > 0.25) this.t = this.audio.currentTime;
+  }
+
+  private stopOrLoopAtEnd() {
+    const range = this.plateRange ?? (this.loopPlate ? this.plateAt(this.t) : null);
+    const end = range ? range.end : this.engine.duration;
+    if (!(this.t >= end)) return;
+    if (range && this.loopPlate) {
+      this.t = range.start;
+      if (this.audio) this.audio.currentTime = this.t;
+    } else {
+      this.t = end; this.playing = false; this.audio?.pause(); this.syncPlayBtn();
     }
   }
 
@@ -157,25 +171,35 @@ export class Player {
   private buildUi() {
     this.ui.innerHTML = '';
     this.ui.style.cssText = 'position:fixed;left:0;right:0;bottom:0;display:flex;align-items:center;gap:14px;padding:14px 22px;background:linear-gradient(transparent, rgba(11,13,18,.92) 40%);font:500 13px "JetBrains Mono",monospace;color:#9aa1b0;z-index:10';
-    this.playBtn = document.createElement('button');
-    this.playBtn.textContent = '\u25B6';
-    this.playBtn.style.cssText = 'width:38px;height:38px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:rgba(20,24,36,.9);color:#f0eee6;font-size:14px;cursor:pointer';
-    this.playBtn.onclick = () => this.toggle();
-    this.bar = document.createElement('input');
-    this.bar.type = 'range';
-    this.bar.min = '0';
-    this.bar.max = '1000';
-    this.bar.value = '0';
-    this.bar.style.cssText = 'flex:1;accent-color:#8c7cf6;cursor:pointer';
-    this.bar.oninput = () => {
-      const from = this.plateRange?.start ?? 0;
-      const to = this.plateRange?.end ?? this.engine.duration;
-      this.seek(from + (+this.bar.value / 1000) * (to - from));
-    };
+    this.playBtn = this.buildPlayButton();
+    this.bar = this.buildScrubber();
     this.label = document.createElement('span');
     this.label.style.cssText = 'min-width:190px;text-align:right;white-space:nowrap';
     this.ui.append(this.playBtn, this.bar, this.label);
     document.body.appendChild(this.ui);
+  }
+
+  private buildPlayButton(): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.textContent = '\u25B6';
+    btn.style.cssText = 'width:38px;height:38px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:rgba(20,24,36,.9);color:#f0eee6;font-size:14px;cursor:pointer';
+    btn.onclick = () => this.toggle();
+    return btn;
+  }
+
+  private buildScrubber(): HTMLInputElement {
+    const bar = document.createElement('input');
+    bar.type = 'range';
+    bar.min = '0';
+    bar.max = '1000';
+    bar.value = '0';
+    bar.style.cssText = 'flex:1;accent-color:#8c7cf6;cursor:pointer';
+    bar.oninput = () => {
+      const from = this.plateRange?.start ?? 0;
+      const to = this.plateRange?.end ?? this.engine.duration;
+      this.seek(from + (+bar.value / 1000) * (to - from));
+    };
+    return bar;
   }
 
   private syncPlayBtn() {

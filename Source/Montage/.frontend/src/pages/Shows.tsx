@@ -85,6 +85,51 @@ export function Shows() {
 
 const stageIndex = (status: string) => stageFlow.findIndex((s) => s.status === status);
 
+function TextField({ label, value, placeholder, onChange }: { label: string; value: string; placeholder?: string; onChange: (value: string) => void }) {
+    return (
+        <div>
+            <label className='eyebrow block mb-2'>{label}</label>
+            <input
+                className='w-full panel px-3 py-2 text-sm outline-none focus:border-[var(--cr-montage-violet)] bg-transparent'
+                placeholder={placeholder}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+            />
+        </div>
+    );
+}
+
+function CreateFooter({ busy, canCreate, onCancel, onCreate }: {
+    busy: boolean;
+    canCreate: boolean;
+    onCancel: () => void;
+    onCreate: (planManually: boolean, destination: string) => void;
+}) {
+    return (
+        <div className='flex justify-end gap-2'>
+            <Button label='Cancel' severity='secondary' text onClick={onCancel} />
+            <Button
+                label='Define slides'
+                icon='pi pi-file-edit'
+                severity='secondary'
+                outlined
+                loading={busy}
+                disabled={!canCreate}
+                title='Create the show and go straight to the storyboard — you add the scenes'
+                onClick={() => onCreate(true, '/shows/:id/storyboard')}
+            />
+            <Button
+                label='Try your luck'
+                icon='pi pi-sparkles'
+                loading={busy}
+                disabled={!canCreate}
+                title='Create the show and let the language model plan the whole thing'
+                onClick={() => onCreate(false, '/shows/:id')}
+            />
+        </div>
+    );
+}
+
 function CreateShowDialog({ visible, onHide }: { visible: boolean; onHide: () => void }) {
     const navigate = useNavigate();
     const [command, setValues, clear] = CreateShow.use();
@@ -108,29 +153,7 @@ function CreateShowDialog({ visible, onHide }: { visible: boolean; onHide: () =>
     };
 
     const canCreate = (command.description ?? '').trim().length >= 8;
-    const footer = (
-        <div className='flex justify-end gap-2'>
-            <Button label='Cancel' severity='secondary' text onClick={onHide} />
-            <Button
-                label='Define slides'
-                icon='pi pi-file-edit'
-                severity='secondary'
-                outlined
-                loading={busy}
-                disabled={!canCreate}
-                title='Create the show and go straight to the storyboard — you add the scenes'
-                onClick={() => create(true, '/shows/:id/storyboard')}
-            />
-            <Button
-                label='Try your luck'
-                icon='pi pi-sparkles'
-                loading={busy}
-                disabled={!canCreate}
-                title='Create the show and let the language model plan the whole thing'
-                onClick={() => create(false, '/shows/:id')}
-            />
-        </div>
-    );
+    const footer = <CreateFooter busy={busy} canCreate={canCreate} onCancel={onHide} onCreate={create} />;
 
     return (
         <Dialog
@@ -150,14 +173,7 @@ function CreateShowDialog({ visible, onHide }: { visible: boolean; onHide: () =>
                     />
                 </div>
                 <div className='grid grid-cols-2 gap-4'>
-                    <div>
-                        <label className='eyebrow block mb-2'>Working title (optional)</label>
-                        <input
-                            className='w-full panel px-3 py-2 text-sm outline-none focus:border-[var(--cr-montage-violet)] bg-transparent'
-                            value={command.title ?? ''}
-                            onChange={(e) => setValues({ title: e.target.value })}
-                        />
-                    </div>
+                    <TextField label='Working title (optional)' value={command.title ?? ''} onChange={(title) => setValues({ title })} />
                     <div>
                         <label className='eyebrow block mb-2'>Target length (seconds)</label>
                         <input
@@ -169,24 +185,8 @@ function CreateShowDialog({ visible, onHide }: { visible: boolean; onHide: () =>
                     </div>
                 </div>
                 <div className='grid grid-cols-2 gap-4'>
-                    <div>
-                        <label className='eyebrow block mb-2'>Tone (optional)</label>
-                        <input
-                            className='w-full panel px-3 py-2 text-sm outline-none focus:border-[var(--cr-montage-violet)] bg-transparent'
-                            placeholder='calm, technical'
-                            value={command.tone ?? ''}
-                            onChange={(e) => setValues({ tone: e.target.value })}
-                        />
-                    </div>
-                    <div>
-                        <label className='eyebrow block mb-2'>Audience (optional)</label>
-                        <input
-                            className='w-full panel px-3 py-2 text-sm outline-none focus:border-[var(--cr-montage-violet)] bg-transparent'
-                            placeholder='developers'
-                            value={command.audience ?? ''}
-                            onChange={(e) => setValues({ audience: e.target.value })}
-                        />
-                    </div>
+                    <TextField label='Tone (optional)' placeholder='calm, technical' value={command.tone ?? ''} onChange={(tone) => setValues({ tone })} />
+                    <TextField label='Audience (optional)' placeholder='developers' value={command.audience ?? ''} onChange={(audience) => setValues({ audience })} />
                 </div>
                 <div>
                     <label className='eyebrow block mb-2'>Planned by (AI provider)</label>

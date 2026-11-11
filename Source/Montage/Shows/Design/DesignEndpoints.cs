@@ -44,6 +44,8 @@ public static class DesignEndpoints
         imply support for arbitrary SVG filters, scripts, 3D, particles, or path morphing.
         """;
 
+    static readonly string[] _acceptedReferenceTypes = ["data:image/png;base64", "data:image/jpeg;base64", "data:image/webp;base64", "data:image/gif;base64"];
+
     /// <summary>Maps the design and template endpoints.</summary>
     /// <param name="app">The application.</param>
     /// <param name="workspace">The durable workspace.</param>
@@ -52,23 +54,32 @@ public static class DesignEndpoints
         app.MapPost("/api/montage/design/draft", Draft);
         var folder = Path.Combine(workspace, "design-templates");
         Directory.CreateDirectory(folder);
-        app.MapGet("/api/montage/design/templates", () =>
-        {
-            var templates = Directory.EnumerateFiles(folder, "*.json")
-                .Select(path => JsonSerializer.Deserialize<JsonElement>(File.ReadAllText(path))).ToArray();
-            return Results.Json(templates);
-        });
-        app.MapPost("/api/montage/design/templates", async (JsonElement template) =>
-        {
-            if (template.ValueKind != JsonValueKind.Object || !template.TryGetProperty("name", out var name) || string.IsNullOrWhiteSpace(name.GetString()))
-            {
-                return Results.BadRequest(new { error = "A template needs a name." });
-            }
-            var id = Guid.NewGuid().ToString("N");
-            await File.WriteAllTextAsync(Path.Combine(folder, $"{id}.json"), template.GetRawText());
-            return Results.Ok(new { id });
-        });
+        app.MapGet("/api/montage/design/templates", () => ListTemplates(folder));
+        app.MapPost("/api/montage/design/templates", (JsonElement template) => SaveTemplate(folder, template));
     }
+
+    static IResult ListTemplates(string folder)
+    {
+        var templates = Directory.EnumerateFiles(folder, "*.json")
+            .Select(path => JsonSerializer.Deserialize<JsonElement>(File.ReadAllText(path))).ToArray();
+        return Results.Json(templates);
+    }
+
+    static async Task<IResult> SaveTemplate(string folder, JsonElement template)
+    {
+        if (!HasName(template))
+        {
+            return Results.BadRequest(new { error = "A template needs a name." });
+        }
+        var id = Guid.NewGuid().ToString("N");
+        await File.WriteAllTextAsync(Path.Combine(folder, $"{id}.json"), template.GetRawText());
+        return Results.Ok(new { id });
+    }
+
+    static bool HasName(JsonElement template) =>
+        template.ValueKind == JsonValueKind.Object
+        && template.TryGetProperty("name", out var name)
+        && !string.IsNullOrWhiteSpace(name.GetString());
 
     static async Task<IResult> Draft(DesignRequest request, IReadModels readModels, CancellationToken cancellationToken)
     {
@@ -76,33 +87,7 @@ public static class DesignEndpoints
         timeout.CancelAfter(TimeSpan.FromMinutes(2));
         try
         {
-            if (string.IsNullOrWhiteSpace(request.ProviderId)) return Results.BadRequest(new { error = "Choose an AI provider." });
-            var provider = await readModels.GetInstanceById<ConfiguredAIProvider>((EventSourceId)request.ProviderId).WaitAsync(timeout.Token);
-            if (provider is null) return Results.BadRequest(new { error = "The AI provider no longer exists." });
-            var modelId = AIChatClientFactory.ResolveModelId(provider.Type, provider.Model);
-            var resolved = AIChatClientFactory.Create(provider.Type, provider.ApiKey, provider.Endpoint, modelId);
-            if (resolved is null) return Results.BadRequest(new { error = "The provider cannot create a chat client." });
-            var message = new ChatMessage(ChatRole.User, $"Direction: {request.Prompt}\nCurrent infographic: {request.Current.GetRawText()}");
-            foreach (var reference in (request.References ?? []).Take(3))
-            {
-                var comma = reference.IndexOf(',');
-                if (comma < 0 || reference.Length > 6_000_000) return Results.BadRequest(new { error = "References must be image data URLs under 4 MB." });
-                var type = reference[..comma];
-                string[] accepted = ["data:image/png;base64", "data:image/jpeg;base64", "data:image/webp;base64", "data:image/gif;base64"];
-                if (!accepted.Contains(type)) return Results.BadRequest(new { error = "Use PNG, JPEG, WebP or GIF references." });
-                message.Contents.Add(new DataContent(Convert.FromBase64String(reference[(comma + 1)..]), type[5..type.IndexOf(';')]));
-            }
-            var response = await resolved.Value.Client.GetResponseAsync(
-                [new(ChatRole.System, SystemPrompt), message],
-                new ChatOptions { ModelId = resolved.Value.ModelId },
-                cancellationToken: timeout.Token);
-            var answer = response.Text ?? string.Empty;
-            var first = answer.IndexOf('{');
-            var last = answer.LastIndexOf('}');
-            if (first < 0 || last < first) throw new InvalidOperationException("The model returned no design JSON.");
-            using var doc = JsonDocument.Parse(answer[first..(last + 1)]);
-            Validate(doc.RootElement);
-            return Results.Json(doc.RootElement.Clone());
+            return await GenerateDraft(request, readModels, timeout.Token);
         }
         catch (OperationCanceledException)
         {
@@ -114,6 +99,52 @@ public static class DesignEndpoints
         }
     }
 
+    static async Task<IResult> GenerateDraft(DesignRequest request, IReadModels readModels, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.ProviderId)) return Results.BadRequest(new { error = "Choose an AI provider." });
+        var provider = await readModels.GetInstanceById<ConfiguredAIProvider>((EventSourceId)request.ProviderId).WaitAsync(cancellationToken);
+        if (provider is null) return Results.BadRequest(new { error = "The AI provider no longer exists." });
+        var resolved = CreateClient(provider);
+        if (resolved is null) return Results.BadRequest(new { error = "The provider cannot create a chat client." });
+        var message = new ChatMessage(ChatRole.User, $"Direction: {request.Prompt}\nCurrent infographic: {request.Current.GetRawText()}");
+        var invalidReference = AddReferences(message, request.References);
+        if (invalidReference is not null) return invalidReference;
+        var response = await resolved.Value.Client.GetResponseAsync(
+            [new(ChatRole.System, SystemPrompt), message],
+            new ChatOptions { ModelId = resolved.Value.ModelId },
+            cancellationToken: cancellationToken);
+        using var doc = JsonDocument.Parse(ExtractJson(response.Text ?? string.Empty));
+        Validate(doc.RootElement);
+        return Results.Json(doc.RootElement.Clone());
+    }
+
+    static (IChatClient Client, string ModelId)? CreateClient(ConfiguredAIProvider provider)
+    {
+        var modelId = AIChatClientFactory.ResolveModelId(provider.Type, provider.Model);
+        return AIChatClientFactory.Create(provider.Type, provider.ApiKey, provider.Endpoint, modelId);
+    }
+
+    static IResult? AddReferences(ChatMessage message, string[]? references)
+    {
+        foreach (var reference in (references ?? []).Take(3))
+        {
+            var comma = reference.IndexOf(',');
+            if (comma < 0 || reference.Length > 6_000_000) return Results.BadRequest(new { error = "References must be image data URLs under 4 MB." });
+            var type = reference[..comma];
+            if (!_acceptedReferenceTypes.Contains(type)) return Results.BadRequest(new { error = "Use PNG, JPEG, WebP or GIF references." });
+            message.Contents.Add(new DataContent(Convert.FromBase64String(reference[(comma + 1)..]), type[5..type.IndexOf(';')]));
+        }
+        return null;
+    }
+
+    static string ExtractJson(string answer)
+    {
+        var first = answer.IndexOf('{');
+        var last = answer.LastIndexOf('}');
+        if (first < 0 || last < first) throw new InvalidOperationException("The model returned no design JSON.");
+        return answer[first..(last + 1)];
+    }
+
     static void Validate(JsonElement design)
     {
         var nodes = design.GetProperty("nodes");
@@ -121,25 +152,41 @@ public static class DesignEndpoints
         var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var node in nodes.EnumerateArray())
         {
-            var id = node.GetProperty("id").GetString() ?? string.Empty;
-            if (id.Length == 0 || !ids.Add(id)) throw new InvalidOperationException("Node IDs must be present and unique.");
-            if (string.IsNullOrWhiteSpace(node.GetProperty("label").GetString())) throw new InvalidOperationException("Each node needs a label.");
-            var x = node.GetProperty("x").GetDouble();
-            var y = node.GetProperty("y").GetDouble();
-            var width = node.GetProperty("width").GetDouble();
-            var height = node.GetProperty("height").GetDouble();
-            if (!double.IsFinite(x + y + width + height) || x < 0 || y < 140 || width < 40 || height < 40 || x + width > 1600 || y + height > 800)
-            {
-                throw new InvalidOperationException($"Node '{id}' is outside the safe canvas.");
-            }
+            ValidateNode(node, ids);
         }
         if (design.TryGetProperty("edges", out var edges))
         {
-            if (edges.GetArrayLength() > 80) throw new InvalidOperationException("Too many connectors.");
-            foreach (var edge in edges.EnumerateArray())
-            {
-                if (!ids.Contains(edge.GetProperty("from").GetString()!) || !ids.Contains(edge.GetProperty("to").GetString()!)) throw new InvalidOperationException("A connector references an unknown node.");
-            }
+            ValidateEdges(edges, ids);
+        }
+    }
+
+    static void ValidateNode(JsonElement node, HashSet<string> ids)
+    {
+        var id = node.GetProperty("id").GetString() ?? string.Empty;
+        if (id.Length == 0 || !ids.Add(id)) throw new InvalidOperationException("Node IDs must be present and unique.");
+        if (string.IsNullOrWhiteSpace(node.GetProperty("label").GetString())) throw new InvalidOperationException("Each node needs a label.");
+        var x = node.GetProperty("x").GetDouble();
+        var y = node.GetProperty("y").GetDouble();
+        var width = node.GetProperty("width").GetDouble();
+        var height = node.GetProperty("height").GetDouble();
+        if (!IsInsideSafeCanvas(x, y, width, height))
+        {
+            throw new InvalidOperationException($"Node '{id}' is outside the safe canvas.");
+        }
+    }
+
+    static bool IsInsideSafeCanvas(double x, double y, double width, double height) =>
+        double.IsFinite(x + y + width + height)
+        && x >= 0 && y >= 140
+        && width >= 40 && height >= 40
+        && x + width <= 1600 && y + height <= 800;
+
+    static void ValidateEdges(JsonElement edges, HashSet<string> ids)
+    {
+        if (edges.GetArrayLength() > 80) throw new InvalidOperationException("Too many connectors.");
+        foreach (var edge in edges.EnumerateArray())
+        {
+            if (!ids.Contains(edge.GetProperty("from").GetString()!) || !ids.Contains(edge.GetProperty("to").GetString()!)) throw new InvalidOperationException("A connector references an unknown node.");
         }
     }
 }

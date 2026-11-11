@@ -145,36 +145,50 @@ public static partial class ShowPlanner
         var root = doc.RootElement;
 
         var title = root.TryGetProperty("title", out var titleEl) ? titleEl.GetString()?.Trim() ?? string.Empty : string.Empty;
-        var scenes = new List<PlannedScene>();
-        if (root.TryGetProperty("scenes", out var scenesEl) && scenesEl.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var s in scenesEl.EnumerateArray())
-            {
-                var type = s.TryGetProperty("type", out var typeEl) ? typeEl.GetString() ?? "kinetic" : "kinetic";
-                var spoken = s.TryGetProperty("spoken", out var spokenEl) ? CleanSpoken(spokenEl.GetString()) : string.Empty;
-                var parameters = new Dictionary<string, JsonElement>();
-                if (s.TryGetProperty("params", out var paramsEl) && paramsEl.ValueKind == JsonValueKind.Object)
-                {
-                    foreach (var p in paramsEl.EnumerateObject())
-                    {
-                        parameters[p.Name] = p.Value.Clone();
-                    }
-                }
-                if (spoken.Length == 0 && type != "endcard") continue;
-                scenes.Add(new PlannedScene
-                {
-                    Type = type.Trim(),
-                    Spoken = spoken,
-                    Params = parameters,
-                });
-            }
-        }
+        var scenes = ParseScenes(root);
         if (scenes.Count == 0) throw new ShowPlanningFailed("The model returned no scenes.");
         if (scenes[^1].Type != "endcard")
         {
             scenes.Add(new PlannedScene { Type = "endcard", Spoken = string.Empty, Params = new Dictionary<string, JsonElement>() });
         }
         return new ShowPlan { Title = string.IsNullOrWhiteSpace(title) ? "Untitled show" : title, Scenes = scenes };
+    }
+
+    static List<PlannedScene> ParseScenes(JsonElement root)
+    {
+        var scenes = new List<PlannedScene>();
+        if (!root.TryGetProperty("scenes", out var scenesEl) || scenesEl.ValueKind != JsonValueKind.Array) return scenes;
+        foreach (var s in scenesEl.EnumerateArray())
+        {
+            var scene = ParseScene(s);
+            if (scene is not null) scenes.Add(scene);
+        }
+        return scenes;
+    }
+
+    static PlannedScene? ParseScene(JsonElement s)
+    {
+        var type = s.TryGetProperty("type", out var typeEl) ? typeEl.GetString() ?? "kinetic" : "kinetic";
+        var spoken = s.TryGetProperty("spoken", out var spokenEl) ? CleanSpoken(spokenEl.GetString()) : string.Empty;
+        var parameters = ParseParams(s);
+        if (spoken.Length == 0 && type != "endcard") return null;
+        return new PlannedScene
+        {
+            Type = type.Trim(),
+            Spoken = spoken,
+            Params = parameters,
+        };
+    }
+
+    static Dictionary<string, JsonElement> ParseParams(JsonElement scene)
+    {
+        var parameters = new Dictionary<string, JsonElement>();
+        if (!scene.TryGetProperty("params", out var paramsEl) || paramsEl.ValueKind != JsonValueKind.Object) return parameters;
+        foreach (var p in paramsEl.EnumerateObject())
+        {
+            parameters[p.Name] = p.Value.Clone();
+        }
+        return parameters;
     }
 
     /// <summary>

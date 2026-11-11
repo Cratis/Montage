@@ -2,6 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using Cratis.Choreography;
 using Cratis.Choreography.Jobs;
 using Cratis.Choreography.Storage.Jobs;
@@ -12,6 +13,8 @@ using Montage.Jobs;
 using Montage.Shows.Planning;
 using Montage.Speech;
 using Orleans.Runtime;
+
+using TimedLines = System.Collections.Generic.List<(string SceneId, string Text, double WindowStart, double WindowEnd)>;
 
 namespace Montage.Shows.Timing;
 
@@ -93,93 +96,120 @@ public class TimeShowStep(
         var showId = ShowId.From(Guid.Parse(currentState.ShowId));
         try
         {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var services = scope.ServiceProvider;
-        var transcriber = services.GetRequiredService<ISpeechTranscriber>();
-        var artifactStore = services.GetRequiredService<ShowArtifactStore>();
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var services = scope.ServiceProvider;
+            var transcriber = services.GetRequiredService<ISpeechTranscriber>();
+            var artifactStore = services.GetRequiredService<ShowArtifactStore>();
 
-        var planJson = ShowArtifactStore.ReadTextOrNull(artifactStore.PlanJson(showId))
-            ?? throw new ShowPlanningFailed("The show has no plan - plan it first.");
-        var plan = ShowPlanner.Deserialize(planJson) ?? throw new ShowPlanningFailed("The stored plan could not be read.");
-        var wavPath = artifactStore.VoiceoverWav(showId);
-        if (!File.Exists(wavPath)) throw new SpeechTranscriptionFailed("The voiceover WAV is missing - synthesize the voice first.");
+            var plan = ReadPlan(artifactStore, showId);
+            var wavPath = artifactStore.VoiceoverWav(showId);
+            if (!File.Exists(wavPath)) throw new SpeechTranscriptionFailed("The voiceover WAV is missing - synthesize the voice first.");
 
-        var audioDuration = currentState.DurationSeconds > 0 ? currentState.DurationSeconds : Wav.ReadDuration(wavPath);
+            var audioDuration = currentState.DurationSeconds > 0 ? currentState.DurationSeconds : Wav.ReadDuration(wavPath);
 
-// Per-scene takes give true word timing: each scene's audio is transcribed on its own
-        // and placed at its exact offset in the assembled track - no window estimation.
-        var lines = new List<(string SceneId, string Text, double WindowStart, double WindowEnd)>();
-        IReadOnlyList<TranscribedWord> words;
-        var scenesJson = ShowArtifactStore.ReadTextOrNull(artifactStore.ScenesJson(showId));
-        if (scenesJson is not null)
-        {
-            var offsetWords = new List<TranscribedWord>();
-            using var scenesDoc = System.Text.Json.JsonDocument.Parse(scenesJson);
-            foreach (var scene in scenesDoc.RootElement.GetProperty("scenes").EnumerateArray())
-            {
-                var sceneId = scene.GetProperty("scene_id").GetString()!;
-                var spoken = scene.GetProperty("spoken").GetString() ?? string.Empty;
-                var sceneOffset = scene.GetProperty("offset").GetDouble();
-                var file = scene.GetProperty("file").GetString()!;
-                var takePath = System.IO.Path.Combine(artifactStore.FolderFor(showId), file);
+            // Per-scene takes give true word timing: each scene's audio is transcribed on its own
+            // and placed at its exact offset in the assembled track - no window estimation.
+            var lines = new TimedLines();
+            var scenesJson = ShowArtifactStore.ReadTextOrNull(artifactStore.ScenesJson(showId));
+            var words = scenesJson is not null
+                ? await TimeFromTakes(scenesJson, artifactStore.FolderFor(showId), transcriber, lines, cancellationToken)
+                : await TimeFromMix(plan, wavPath, transcriber, lines, cancellationToken);
 
-                var takeWords = transcriber.IsEnabled && File.Exists(takePath)
-                    ? await transcriber.TranscribeWithWordTimings(takePath, cancellationToken)
-                    : [];
+            var lyricsJson = ShowTimingData.BuildLyricsJson(lines, words, audioDuration);
+            ShowArtifactStore.WriteText(artifactStore.LyricsJson(showId), lyricsJson);
+            var audioAnalysisJson = ShowTimingData.BuildAudioAnalysisJson(wavPath, lyricsJson);
+            ShowArtifactStore.WriteText(artifactStore.AudioAnalysisJson(showId), audioAnalysisJson);
 
-                // line windows from the actual words of this take, moved into show time
-                var wordsInTake = takeWords.Count > 0 ? takeWords : FallbackWords(spoken, sceneOffset);
-                var wordCursor = 0;
-                foreach (var sentence in ShowTimingData.SplitIntoLines(spoken))
-                {
-                    var sentenceWordCount = sentence.Split(' ', System.StringSplitOptions.RemoveEmptyEntries).Length;
-                    var slice = wordsInTake.Skip(wordCursor).Take(sentenceWordCount).ToList();
-                    wordCursor += sentenceWordCount;
-                    var start = slice.Count > 0 ? sceneOffset + slice[0].Start : sceneOffset;
-                    var end = slice.Count > 0 ? sceneOffset + slice[^1].End : start + 0.6;
-                    lines.Add((sceneId, sentence, start, end));
-                    foreach (var w in slice)
-                    {
-                        offsetWords.Add(new TranscribedWord(w.Word, sceneOffset + w.Start, sceneOffset + w.End));
-                    }
-                }
-            }
-            words = offsetWords;
-        }
-        else
-        {
-            // legacy artifacts without a scene manifest: estimate the windows, transcribe the mix
-            double windowStart = 0;
-            const double SceneGap = 0.45;
-            for (var i = 0; i < plan.Scenes.Count; i++)
-            {
-                var spoken = plan.Scenes[i].Spoken.Trim();
-                if (spoken.Length == 0) continue;
-                foreach (var sentence in ShowTimingData.SplitIntoLines(spoken))
-                {
-                    lines.Add(($"scene-{i + 1}", sentence, windowStart, windowStart + EstimateDuration(sentence)));
-                }
-                windowStart += EstimateDuration(spoken) + SceneGap;
-            }
-
-            words = transcriber.IsEnabled
-                ? await transcriber.TranscribeWithWordTimings(wavPath, cancellationToken)
-                : [];
-        }
-
-        var lyricsJson = ShowTimingData.BuildLyricsJson(lines, words, audioDuration);
-        ShowArtifactStore.WriteText(artifactStore.LyricsJson(showId), lyricsJson);
-        var audioAnalysisJson = ShowTimingData.BuildAudioAnalysisJson(wavPath, lyricsJson);
-        ShowArtifactStore.WriteText(artifactStore.AudioAnalysisJson(showId), audioAnalysisJson);
-
-        await JobStepAppender.Append(this, chronicleClient, showId.Value, new ShowTimed(lyricsJson, currentState.Render));
-        return JobStepResult.Succeeded();
+            await JobStepAppender.Append(this, chronicleClient, showId.Value, new ShowTimed(lyricsJson, currentState.Render));
+            return JobStepResult.Succeeded();
         }
         catch (Exception exception)
         {
             var message = await JobStepAppender.ReportFailure(this, chronicleClient, showId.Value, "time", exception, logger);
             return JobStepResult.Failed(message);
         }
+    }
+
+    static ShowPlan ReadPlan(ShowArtifactStore artifactStore, ShowId showId)
+    {
+        var planJson = ShowArtifactStore.ReadTextOrNull(artifactStore.PlanJson(showId))
+            ?? throw new ShowPlanningFailed("The show has no plan - plan it first.");
+        return ShowPlanner.Deserialize(planJson) ?? throw new ShowPlanningFailed("The stored plan could not be read.");
+    }
+
+    static async Task<IReadOnlyList<TranscribedWord>> TimeFromTakes(
+        string scenesJson,
+        string folder,
+        ISpeechTranscriber transcriber,
+        TimedLines lines,
+        CancellationToken cancellationToken)
+    {
+        var offsetWords = new List<TranscribedWord>();
+        using var scenesDoc = JsonDocument.Parse(scenesJson);
+        foreach (var scene in scenesDoc.RootElement.GetProperty("scenes").EnumerateArray())
+        {
+            var sceneId = scene.GetProperty("scene_id").GetString()!;
+            var spoken = scene.GetProperty("spoken").GetString() ?? string.Empty;
+            var sceneOffset = scene.GetProperty("offset").GetDouble();
+            var takePath = Path.Combine(folder, scene.GetProperty("file").GetString()!);
+
+            var takeWords = transcriber.IsEnabled && File.Exists(takePath)
+                ? await transcriber.TranscribeWithWordTimings(takePath, cancellationToken)
+                : [];
+
+            // line windows from the actual words of this take, moved into show time
+            var wordsInTake = takeWords.Count > 0 ? takeWords : FallbackWords(spoken, sceneOffset);
+            AddSceneLines(sceneId, spoken, sceneOffset, wordsInTake, lines, offsetWords);
+        }
+
+        return offsetWords;
+    }
+
+    static void AddSceneLines(
+        string sceneId,
+        string spoken,
+        double sceneOffset,
+        IReadOnlyList<TranscribedWord> wordsInTake,
+        TimedLines lines,
+        List<TranscribedWord> offsetWords)
+    {
+        var wordCursor = 0;
+        foreach (var sentence in ShowTimingData.SplitIntoLines(spoken))
+        {
+            var sentenceWordCount = sentence.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+            var slice = wordsInTake.Skip(wordCursor).Take(sentenceWordCount).ToList();
+            wordCursor += sentenceWordCount;
+            var start = slice.Count > 0 ? sceneOffset + slice[0].Start : sceneOffset;
+            var end = slice.Count > 0 ? sceneOffset + slice[^1].End : start + 0.6;
+            lines.Add((sceneId, sentence, start, end));
+            offsetWords.AddRange(slice.Select(w => new TranscribedWord(w.Word, sceneOffset + w.Start, sceneOffset + w.End)));
+        }
+    }
+
+    static async Task<IReadOnlyList<TranscribedWord>> TimeFromMix(
+        ShowPlan plan,
+        string wavPath,
+        ISpeechTranscriber transcriber,
+        TimedLines lines,
+        CancellationToken cancellationToken)
+    {
+        // legacy artifacts without a scene manifest: estimate the windows, transcribe the mix
+        double windowStart = 0;
+        const double SceneGap = 0.45;
+        for (var i = 0; i < plan.Scenes.Count; i++)
+        {
+            var spoken = plan.Scenes[i].Spoken.Trim();
+            if (spoken.Length == 0) continue;
+            foreach (var sentence in ShowTimingData.SplitIntoLines(spoken))
+            {
+                lines.Add(($"scene-{i + 1}", sentence, windowStart, windowStart + EstimateDuration(sentence)));
+            }
+            windowStart += EstimateDuration(spoken) + SceneGap;
+        }
+
+        return transcriber.IsEnabled
+            ? await transcriber.TranscribeWithWordTimings(wavPath, cancellationToken)
+            : [];
     }
 
     /// <inheritdoc/>

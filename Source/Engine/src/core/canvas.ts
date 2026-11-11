@@ -4,7 +4,15 @@
 import type { Theme } from './theme';
 import { withAlpha } from './theme';
 
-export function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+/** A point on the canvas. */
+export interface Point { x: number; y: number }
+/** An axis-aligned rectangle on the canvas. */
+export interface Rect { x: number; y: number; w: number; h: number }
+/** What the ambient ground needs to know about the stage it paints. */
+export interface Stage { W: number; H: number; theme: Theme }
+
+export function roundRect(ctx: CanvasRenderingContext2D, rect: Rect, r: number) {
+  const { x, y, w, h } = rect;
   const rr = Math.min(r, w / 2, h / 2);
   ctx.beginPath();
   ctx.moveTo(x + rr, y);
@@ -16,7 +24,8 @@ export function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w
 }
 
 /** The ambient ground: dot grid + one violet glow near the top + hairline frame. Idempotent per frame. */
-export function ambient(ctx: CanvasRenderingContext2D, W: number, H: number, theme: Theme, t = 0) {
+export function ambient(ctx: CanvasRenderingContext2D, stage: Stage, t = 0) {
+  const { W, H, theme } = stage;
   ctx.fillStyle = theme.bg;
   ctx.fillRect(0, 0, W, H);
   // one restrained glow, breathing almost imperceptibly with time
@@ -38,7 +47,8 @@ export function ambient(ctx: CanvasRenderingContext2D, W: number, H: number, the
 }
 
 /** A panel: surface fill, hairline border, soft inner top light. */
-export function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, theme: Theme, opts: { accent?: string; radius?: number; alpha?: number } = {}) {
+export function panel(ctx: CanvasRenderingContext2D, rect: Rect, theme: Theme, opts: { accent?: string; radius?: number; alpha?: number } = {}) {
+  const { x, y, w, h } = rect;
   const { accent, radius = 18, alpha = 1 } = opts;
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -46,14 +56,14 @@ export function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: nu
   g.addColorStop(0, theme.surface);
   g.addColorStop(1, theme.bg2);
   ctx.fillStyle = g;
-  roundRect(ctx, x, y, w, h, radius);
+  roundRect(ctx, rect, radius);
   ctx.fill();
   if (accent) {
     const ag = ctx.createRadialGradient(x, y, 0, x, y, Math.max(w, h) * 0.8);
     ag.addColorStop(0, withAlpha(accent, 0.16));
     ag.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.save();
-    roundRect(ctx, x, y, w, h, radius);
+    roundRect(ctx, rect, radius);
     ctx.clip();
     ctx.fillStyle = ag;
     ctx.fillRect(x, y, w, h);
@@ -61,7 +71,7 @@ export function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: nu
   }
   ctx.strokeStyle = accent ? withAlpha(theme.ink, 0.14) : theme.rule;
   ctx.lineWidth = 1;
-  roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, radius);
+  roundRect(ctx, { x: x + 0.5, y: y + 0.5, w: w - 1, h: h - 1 }, radius);
   ctx.stroke();
   if (accent) {
     ctx.strokeStyle = withAlpha(accent, 0.75);
@@ -76,7 +86,10 @@ export function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: nu
 }
 
 /** Mono technical label, letterspaced uppercase (the "eyebrow"). */
-export function eyebrow(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, theme: Theme, opts: { color?: string; size?: number; tracking?: number; align?: 'left' | 'center' } = {}) {
+export function eyebrow(ctx: CanvasRenderingContext2D, text: string, at: Point, opts: { theme: Theme; color?: string; size?: number; tracking?: number; align?: 'left' | 'center' }) {
+  const { y } = at;
+  let { x } = at;
+  const { theme } = opts;
   const size = opts.size ?? 22;
   const tracking = opts.tracking ?? 4;
   ctx.save();
@@ -97,7 +110,9 @@ export function eyebrow(ctx: CanvasRenderingContext2D, text: string, x: number, 
 }
 
 /** Small mono chip with hairline border. */
-export function chip(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, theme: Theme, opts: { size?: number; color?: string; fill?: string; border?: string; padding?: number } = {}) {
+export function chip(ctx: CanvasRenderingContext2D, text: string, at: Point, opts: { theme: Theme; size?: number; color?: string; fill?: string; border?: string; padding?: number }) {
+  const { x, y } = at;
+  const { theme } = opts;
   const size = opts.size ?? 20;
   ctx.save();
   ctx.font = `${size}px ${theme.fontMono}`;
@@ -105,10 +120,10 @@ export function chip(ctx: CanvasRenderingContext2D, text: string, x: number, y: 
   const w = ctx.measureText(text).width + padX * 2;
   const h = size + padY * 2;
   ctx.fillStyle = opts.fill ?? theme.surface;
-  roundRect(ctx, x, y, w, h, h / 2);
+  roundRect(ctx, { x, y, w, h }, h / 2);
   ctx.fill();
   ctx.strokeStyle = opts.border ?? theme.rule;
-  roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, h / 2);
+  roundRect(ctx, { x: x + 0.5, y: y + 0.5, w: w - 1, h: h - 1 }, h / 2);
   ctx.stroke();
   ctx.fillStyle = opts.color ?? theme.dim;
   ctx.textBaseline = 'middle';
@@ -118,8 +133,11 @@ export function chip(ctx: CanvasRenderingContext2D, text: string, x: number, y: 
 }
 
 /** Horizontal/vertical arrow with a head; progress 0..1 draws it on. */
-export function arrow(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, theme: Theme, progress = 1, color?: string) {
-  const c = color ?? withAlpha(theme.ink, 0.35);
+export function arrow(ctx: CanvasRenderingContext2D, from: Point, to: Point, opts: { theme: Theme; progress?: number; color?: string }) {
+  const { x: x1, y: y1 } = from;
+  const { x: x2, y: y2 } = to;
+  const { theme, progress = 1 } = opts;
+  const c = opts.color ?? withAlpha(theme.ink, 0.35);
   const dx = x2 - x1, dy = y2 - y1;
   const len = Math.hypot(dx, dy);
   if (len < 1) return;
