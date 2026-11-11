@@ -7,7 +7,7 @@
         <RootNamespace>Composition</RootNamespace>
         <!-- ASPIRE010 warns that AspireUseCliBundle is false, which for this AppHost is correct rather
              than a mistake: Aspire.AppHost.Sdk 13.6.5 adds Aspire.Hosting.Orchestration.<rid> and
-             Aspire.Dashboard.Sdk.<rid> unconditionally, so running `dotnet run` against Source/Composition
+             Aspire.Dashboard.Sdk.<rid> whenever AspireUseCliBundle is false and default references are enabled, so running `dotnet run` against Source/Composition
              already has DCP and the dashboard. Setting AspireUseCliBundle=true would instead make the
              build resolve an `aspire` CLI off PATH, which is not a prerequisite anybody is told to install.
              Suppressed here rather than repo-wide: it is a fact about this one project. -->
