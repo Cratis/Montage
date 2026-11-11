@@ -2,7 +2,7 @@
 // and highlight lines that take an accent wash as the narration passes them.
 
 import { Scene, type Frame } from '../core/scene';
-import { ambient, panel, eyebrow } from '../core/canvas';
+import { ambient, panel, eyebrow, type Rect } from '../core/canvas';
 import { font } from '../core/text';
 import { ease, clamp, inv } from '../core/util';
 import { withAlpha } from '../core/theme';
@@ -16,27 +16,33 @@ const KEYWORDS: Record<string, string[]> = {
 
 interface Tok { text: string; cls: 'kw' | 'str' | 'com' | 'num' | 'plain' | 'type' }
 
+const WORD_GROUP_CLASSES: Tok['cls'][] = ['str', 'com', 'num'];
+
+function classifyWord(word: string, language: string): Tok['cls'] {
+  const kws = KEYWORDS[language] ?? KEYWORDS.typescript!;
+  if (kws.some((k) => k.toLowerCase() === word.toLowerCase() && (language === 'sql' ? k === word : true))) return 'kw';
+  return /^[A-Z]/.test(word) ? 'type' : 'plain';
+}
+
+/** The token one regex match stands for: groups 1-3 are literals, 4 a word, the rest filler. */
+function tokenOf(m: RegExpExecArray, language: string): Tok {
+  const literal = WORD_GROUP_CLASSES.findIndex((_, g) => !!m[g + 1]);
+  if (literal >= 0) return { text: m[literal + 1]!, cls: WORD_GROUP_CLASSES[literal]! };
+  if (m[4]) return { text: m[4], cls: classifyWord(m[4], language) };
+  return { text: m[5] ?? m[6] ?? '', cls: 'plain' };
+}
+
 function tokenizeLine(line: string, language: string): Tok[] {
   const out: Tok[] = [];
-  const kws = KEYWORDS[language] ?? KEYWORDS.typescript!;
-  let rest = line;
-  const push = (text: string, cls: Tok['cls']) => { if (text) out.push({ text, cls }); };
 
   // whole-line comment
-  if (/^\s*(\/\/|#|--)/.test(rest)) { push(rest, 'com'); return out; }
+  if (/^\s*(\/\/|#|--)/.test(line)) { out.push({ text: line, cls: 'com' }); return out; }
 
   const re = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\/\/.*$|#.*$)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)|(\s+)|(.)/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(rest)) !== null) {
-    if (m[1]) push(m[1], 'str');
-    else if (m[2]) push(m[2], 'com');
-    else if (m[3]) push(m[3], 'num');
-    else if (m[4]) {
-      const word = m[4];
-      if (kws.some((k) => k.toLowerCase() === word.toLowerCase() && (language === 'sql' ? k === word : true))) push(word, 'kw');
-      else if (/^[A-Z]/.test(word)) push(word, 'type');
-      else push(word, 'plain');
-    } else push(m[5] ?? m[6] ?? '', 'plain');
+  while ((m = re.exec(line)) !== null) {
+    const tok = tokenOf(m, language);
+    if (tok.text) out.push(tok);
   }
   return out;
 }
@@ -50,11 +56,23 @@ const TOK_COLOR: Record<Tok['cls'], (t: any) => string> = {
   plain: (t) => t.inkSoft,
 };
 
+/** Geometry and timing shared by every line of the panel. */
+interface CodeBox {
+  panel: Rect;
+  lineH: number;
+  startY: number;
+  fade: number;
+  lt: number;
+  language: string;
+  highlights: number[];
+  lineCount: number;
+}
+
 export class Code extends Scene {
   override render(f: Frame, ctx: CanvasRenderingContext2D): void {
     const { W, H, theme, params } = this.ctx;
     const lt = f.lt;
-    ambient(ctx, W, H, theme, f.t);
+    ambient(ctx, this.ctx, f.t);
 
     const code = String(params.code ?? '').replace(/\t/g, '  ');
     const language = String(params.language ?? 'typescript').toLowerCase();
@@ -71,85 +89,110 @@ export class Code extends Scene {
     const px = W / 2 - panelW / 2;
     const py = H / 2 - panelH / 2 + (title ? H * 0.02 : 0);
 
-    if (title || kicker) {
-      const hk = ease.outCubic(clamp(inv(0.05, 0.5, lt)));
-      if (hk > 0) {
-        ctx.save();
-        ctx.globalAlpha = hk;
-        if (kicker) eyebrow(ctx, kicker, W / 2, py - 46, theme, { align: 'center', size: 17 });
-        if (title) {
-          ctx.font = font(34, theme.fontDisplay, 600);
-          ctx.fillStyle = theme.ink;
-          ctx.textAlign = 'center';
-          ctx.fillText(title, W / 2, py - (kicker ? 78 : 46));
-        }
-        ctx.restore();
-      }
-    }
+    if (title || kicker) this.drawHeading(ctx, { title, kicker }, { py, lt });
 
     const pk = ease.outExpo(clamp(inv(0.15, 0.8, lt)));
     ctx.save();
     ctx.globalAlpha = pk;
     ctx.translate(0, (1 - pk) * 20);
-    panel(ctx, px, py, panelW, panelH, theme, { radius: 20 });
+    panel(ctx, { x: px, y: py, w: panelW, h: panelH }, theme, { radius: 20 });
+    this.drawTrafficDots(ctx, { px, py, fade: pk });
 
-    // traffic dots
-    const dotY = py + 26;
+    const box: CodeBox = {
+      panel: { x: px, y: py, w: panelW, h: panelH },
+      lineH,
+      startY: py + padY + (title ? 40 : 0),
+      fade: pk,
+      lt,
+      language,
+      highlights,
+      lineCount: lines.length,
+    };
+    ctx.font = font(19, theme.fontMono, 400);
+    lines.forEach((line, i) => this.drawLine(ctx, line, i, box));
+    ctx.restore();
+  }
+
+  private drawHeading(ctx: CanvasRenderingContext2D, text: { title: string; kicker: string }, at: { py: number; lt: number }): void {
+    const { W, theme } = this.ctx;
+    const { title, kicker } = text;
+    const { py, lt } = at;
+    const hk = ease.outCubic(clamp(inv(0.05, 0.5, lt)));
+    if (hk <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = hk;
+    if (kicker) eyebrow(ctx, kicker, { x: W / 2, y: py - 46 }, { theme, align: 'center', size: 17 });
+    if (title) {
+      ctx.font = font(34, theme.fontDisplay, 600);
+      ctx.fillStyle = theme.ink;
+      ctx.textAlign = 'center';
+      ctx.fillText(title, W / 2, py - (kicker ? 78 : 46));
+    }
+    ctx.restore();
+  }
+
+  private drawTrafficDots(ctx: CanvasRenderingContext2D, at: { px: number; py: number; fade: number }): void {
+    const dotY = at.py + 26;
     (['#ff5f57', '#febc2e', '#28c840'] as const).forEach((c, i) => {
       ctx.fillStyle = c;
-      ctx.globalAlpha = pk * 0.7;
+      ctx.globalAlpha = at.fade * 0.7;
       ctx.beginPath();
-      ctx.arc(px + 26 + i * 22, dotY, 5.5, 0, Math.PI * 2);
+      ctx.arc(at.px + 26 + i * 22, dotY, 5.5, 0, Math.PI * 2);
       ctx.fill();
     });
-    ctx.globalAlpha = pk;
+    ctx.globalAlpha = at.fade;
+  }
 
-    const textX = px + 76;
-    const startY = py + padY + (title ? 40 : 0);
-    const fontSize = 19;
-    ctx.font = font(fontSize, theme.fontMono, 400);
+  private drawLine(ctx: CanvasRenderingContext2D, line: string, i: number, box: CodeBox): void {
+    const { theme } = this.ctx;
+    const { lineH, lineCount, fade: pk, lt } = box;
+    const lk = ease.outCubic(clamp(inv(0.3 + i * (0.5 / lineCount), 0.5 + i * (0.5 / lineCount), lt)));
+    if (lk <= 0) return;
+    const y = box.startY + i * lineH;
+    const isHi = box.highlights.includes(i + 1);
+    if (isHi) this.drawHighlight(ctx, box, { y, order: box.highlights.indexOf(i + 1) });
 
-    lines.forEach((line, i) => {
-      const lk = ease.outCubic(clamp(inv(0.3 + i * (0.5 / lines.length), 0.5 + i * (0.5 / lines.length), lt)));
-      if (lk <= 0) return;
-      const y = startY + i * lineH;
-
-      // highlighted line wash
-      const isHi = highlights.includes(i + 1);
-      if (isHi) {
-        const hiProg = clamp(inv(0.6 + (highlights.indexOf(i + 1) * 0.5), 1.0 + (highlights.indexOf(i + 1) * 0.5), lt));
-        ctx.fillStyle = withAlpha(theme.accent, 0.10 * hiProg);
-        ctx.fillRect(px + 12, y - lineH * 0.72, panelW - 24, lineH);
-        ctx.fillStyle = theme.accent;
-        ctx.fillRect(px + 12, y - lineH * 0.72, 3, lineH);
-      }
-
-      // line number
-      ctx.save();
-      ctx.globalAlpha = pk * lk * 0.5;
-      ctx.fillStyle = isHi ? theme.accent : theme.faint;
-      ctx.textAlign = 'right';
-      ctx.fillText(String(i + 1), px + 56, y);
-      ctx.restore();
-
-      // tokens
-      ctx.textAlign = 'left';
-      let x = textX;
-      const toks = tokenizeLine(line, language);
-      const revealChars = Math.ceil(line.length * lk);
-      let consumed = 0;
-      for (const tok of toks) {
-        const remaining = revealChars - consumed;
-        if (remaining <= 0) break;
-        const shown = tok.text.slice(0, Math.max(0, remaining));
-        ctx.fillStyle = TOK_COLOR[tok.cls](theme);
-        ctx.globalAlpha = pk * (tok.cls === 'com' ? 0.7 : 1);
-        ctx.fillText(shown, x, y);
-        x += ctx.measureText(shown).width;
-        consumed += tok.text.length;
-      }
-      ctx.globalAlpha = pk;
-    });
+    // line number
+    ctx.save();
+    ctx.globalAlpha = pk * lk * 0.5;
+    ctx.fillStyle = isHi ? theme.accent : theme.faint;
+    ctx.textAlign = 'right';
+    ctx.fillText(String(i + 1), box.panel.x + 56, y);
     ctx.restore();
+
+    this.drawTokens(ctx, line, { x: box.panel.x + 76, y }, { box, reveal: lk });
+  }
+
+  /** Highlighted line wash. */
+  private drawHighlight(ctx: CanvasRenderingContext2D, box: CodeBox, at: { y: number; order: number }): void {
+    const { theme } = this.ctx;
+    const { lineH, lt } = box;
+    const { x: px, w: panelW } = box.panel;
+    const hiProg = clamp(inv(0.6 + (at.order * 0.5), 1.0 + (at.order * 0.5), lt));
+    ctx.fillStyle = withAlpha(theme.accent, 0.10 * hiProg);
+    ctx.fillRect(px + 12, at.y - lineH * 0.72, panelW - 24, lineH);
+    ctx.fillStyle = theme.accent;
+    ctx.fillRect(px + 12, at.y - lineH * 0.72, 3, lineH);
+  }
+
+  private drawTokens(ctx: CanvasRenderingContext2D, line: string, at: { x: number; y: number }, reveal: { box: CodeBox; reveal: number }): void {
+    const { theme } = this.ctx;
+    const pk = reveal.box.fade;
+    ctx.textAlign = 'left';
+    let x = at.x;
+    const toks = tokenizeLine(line, reveal.box.language);
+    const revealChars = Math.ceil(line.length * reveal.reveal);
+    let consumed = 0;
+    for (const tok of toks) {
+      const remaining = revealChars - consumed;
+      if (remaining <= 0) break;
+      const shown = tok.text.slice(0, Math.max(0, remaining));
+      ctx.fillStyle = TOK_COLOR[tok.cls](theme);
+      ctx.globalAlpha = pk * (tok.cls === 'com' ? 0.7 : 1);
+      ctx.fillText(shown, x, at.y);
+      x += ctx.measureText(shown).width;
+      consumed += tok.text.length;
+    }
+    ctx.globalAlpha = pk;
   }
 }

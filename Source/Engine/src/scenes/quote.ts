@@ -11,7 +11,7 @@ export class Quote extends Scene {
   override render(f: Frame, ctx: CanvasRenderingContext2D): void {
     const { W, H, theme, params } = this.ctx;
     const lt = f.lt;
-    ambient(ctx, W, H, theme, f.t);
+    ambient(ctx, this.ctx, f.t);
 
     const text = String(params.text ?? params.quote ?? '');
     const attribution = params.attribution ? String(params.attribution) : '';
