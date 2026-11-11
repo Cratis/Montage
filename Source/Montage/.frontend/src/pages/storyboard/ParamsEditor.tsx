@@ -278,7 +278,7 @@ const RENDERERS: Record<string, (p: Params, set: SetParam) => ReactNode> = {
 
 /** The type-specific visual parameters, one structured control each - never raw JSON. */
 export function ParamsEditor({ scene, onParam }: { scene: { type: string; params: Params }; onParam: SetParam }) {
-    const render = RENDERERS[scene.type];
+    const render = Object.hasOwn(RENDERERS, scene.type) ? RENDERERS[scene.type] : undefined;
     if (!render) {
         return <div className='text-xs text-[var(--cr-montage-faint)] md:col-span-2'>Unknown scene type — parameters are kept as they are.</div>;
     }
