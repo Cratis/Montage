@@ -12,7 +12,15 @@ import { AudioData } from './audio';
 import { themeOrDefault, type Theme } from './theme';
 import { Hud, type Caption } from './hud';
 import { postProcess } from './post';
-import { clamp, hash, rng, ease } from './util';
+import { clamp, hash, rng } from './util';
+import { composite, type TransitionLayers } from './transitions';
+
+/** The HUD caption shown over a scene that declares one. */
+function captionFor(e: TimelineEntry): Caption {
+  const delay = 0.35;
+  const caption = e.spec.caption!;
+  return { start: e.start + delay, end: Math.min(e.end - 0.4, e.start + delay + 4.5), fig: caption.fig, text: caption.text };
+}
 
 interface Loaded { entry: TimelineEntry; scene: Scene | null; error?: string }
 
@@ -55,6 +63,26 @@ export class MontageEngine {
   }
 
   async init(): Promise<void> {
+    await this.loadFonts();
+    if (this.spec.voiceover) await Promise.all([this.loadAudio(), this.loadLyrics()]);
+    this.timeline = buildTimeline(this.spec, this.lyrics.lines.length ? this.lyrics : null, this.audio.duration ? this.audio : null);
+
+    const captions: Caption[] = [];
+    for (const e of this.timeline) {
+      await this.loadScene(e);
+      if (e.spec.caption) captions.push(captionFor(e));
+    }
+
+    this.hud = new Hud(
+      this.theme, this.W, this.H,
+      { name: this.spec.brand?.name ?? 'Cratis', product: this.spec.brand?.product, markUrl: this.spec.brand?.markUrl ?? 'fonts/cratis-mark.svg', hideMark: this.spec.brand?.hideMark },
+      captions,
+    );
+    await this.hud.load();
+    this.ready = true;
+  }
+
+  private async loadFonts(): Promise<void> {
     // font-face declarations alone do not load fonts. Request the actual scene weights
     // before measuring text, or offline frames can switch metrics partway through export.
     await Promise.all([
@@ -66,58 +94,44 @@ export class MontageEngine {
       document.fonts.load(`500 20px ${this.theme.fontMono}`),
     ]);
     await document.fonts.ready;
-    const jobs: Promise<void>[] = [];
+  }
 
-    if (this.spec.voiceover) {
-      const anaUrl = `${this.base}/data/audio.json`;
-      jobs.push(AudioData.load(anaUrl).then((a) => { this.audio = a; }).catch(() => {
-        // no analysis: probe the audio element for duration so timing still works
-        const el = new Audio(`${this.base}/${this.spec.voiceover}`);
-        return new Promise<void>((res) => {
-          el.addEventListener('loadedmetadata', () => { this.audio = AudioData.empty(el.duration); res(); });
-          el.addEventListener('error', () => { this.audio = AudioData.empty(this.spec.duration ?? 0); res(); });
-          setTimeout(() => res(), 4000);
-        });
-      }));
-      jobs.push(fetch(`${this.base}/data/lyrics.json`)
-        .then((r) => (r.ok ? r.json() : Promise.reject(new Error('no lyrics'))))
-        .then((j) => { this.lyrics = new LyricsClass(j); })
-        .catch(() => { this.lyrics = new LyricsClass({}); }));
+  private loadAudio(): Promise<void> {
+    return AudioData.load(`${this.base}/data/audio.json`).then((a) => { this.audio = a; }).catch(() => {
+      // no analysis: probe the audio element for duration so timing still works
+      const el = new Audio(`${this.base}/${this.spec.voiceover}`);
+      return new Promise<void>((res) => {
+        el.addEventListener('loadedmetadata', () => { this.audio = AudioData.empty(el.duration); res(); });
+        el.addEventListener('error', () => { this.audio = AudioData.empty(this.spec.duration ?? 0); res(); });
+        setTimeout(() => res(), 4000);
+      });
+    });
+  }
+
+  private loadLyrics(): Promise<void> {
+    return fetch(`${this.base}/data/lyrics.json`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('no lyrics'))))
+      .then((j) => { this.lyrics = new LyricsClass(j); })
+      .catch(() => { this.lyrics = new LyricsClass({}); });
+  }
+
+  /** Construct and initialise one scene; a failing scene is recorded and rendered as an error plate. */
+  private async loadScene(e: TimelineEntry): Promise<void> {
+    const ctx: SceneCtx = {
+      W: this.W, H: this.H, id: e.id, spec: e.spec, params: e.spec.params ?? {},
+      theme: this.theme, audio: this.audio, lyrics: this.lyrics, base: this.base,
+    };
+    let scene: Scene | null = null;
+    try {
+      scene = new (sceneClassFor(e.type))(ctx);
+      await scene.init();
+    } catch (err) {
+      const msg = String((err as Error)?.stack ?? err);
+      this.errors.push(`[${e.id}] ${msg}`);
+      console.error(`scene ${e.id} failed`, err);
+      scene = null;
     }
-
-    await Promise.all(jobs);
-    this.timeline = buildTimeline(this.spec, this.lyrics.lines.length ? this.lyrics : null, this.audio.duration ? this.audio : null);
-
-    const captions: Caption[] = [];
-    for (const e of this.timeline) {
-      const ctx: SceneCtx = {
-        W: this.W, H: this.H, id: e.id, spec: e.spec, params: e.spec.params ?? {},
-        theme: this.theme, audio: this.audio, lyrics: this.lyrics, base: this.base,
-      };
-      let scene: Scene | null = null;
-      try {
-        scene = new (sceneClassFor(e.type))(ctx);
-        await scene.init();
-      } catch (err) {
-        const msg = String((err as Error)?.stack ?? err);
-        this.errors.push(`[${e.id}] ${msg}`);
-        console.error(`scene ${e.id} failed`, err);
-        scene = null;
-      }
-      this.loaded.set(e.id, { entry: e, scene });
-      if (e.spec.caption) {
-        const delay = 0.35;
-        captions.push({ start: e.start + delay, end: Math.min(e.end - 0.4, e.start + delay + 4.5), fig: e.spec.caption.fig, text: e.spec.caption.text });
-      }
-    }
-
-    this.hud = new Hud(
-      this.theme, this.W, this.H,
-      { name: this.spec.brand?.name ?? 'Cratis', product: this.spec.brand?.product, markUrl: this.spec.brand?.markUrl ?? 'fonts/cratis-mark.svg', hideMark: this.spec.brand?.hideMark },
-      captions,
-    );
-    await this.hud.load();
-    this.ready = true;
+    this.loaded.set(e.id, { entry: e, scene });
   }
 
   private frameFor(e: TimelineEntry, t: number, dt: number, seeked: boolean): Frame {
@@ -144,49 +158,24 @@ export class MontageEngine {
     const seeked = this.lastT < 0 || Math.abs(t - this.lastT) > 0.25;
     this.lastT = t;
 
-    const entries = this.timeline;
-    const idx = entries.findIndex((e) => t >= e.start && t < e.end);
-    // Unvoiced gaps belong to the preceding scene, not the show's endcard. Falling
-    // back to the last entry here flashed the closing card between unrelated plates.
-    const cur = idx >= 0 ? entries[idx] : (entries.filter(e => e.start <= t).at(-1) ?? entries[0]);
+    const cur = this.entryAt(t);
     if (!cur) return '';
-    const curIdx = entries.indexOf(cur);
-    const prev = curIdx > 0 ? entries[curIdx - 1] : null;
+    const curIdx = this.timeline.indexOf(cur);
+    const prev = curIdx > 0 ? this.timeline[curIdx - 1] : null;
 
     // transition state: the incoming scene's first tDur seconds composite over the previous.
-    const tDur = cur.transitionDuration;
     const tin = prev && cur.transitionIn !== 'cut'
-      ? clamp((t - cur.start) / Math.max(1e-3, tDur))
+      ? clamp((t - cur.start) / Math.max(1e-3, cur.transitionDuration))
       : 1;
     const transitioning = !!prev && tin < 1;
-
-    const draw = (e: TimelineEntry, c: CanvasRenderingContext2D, time: number) => {
-      const rec = this.loaded.get(e.id)!;
-      c.save();
-      c.setTransform(1, 0, 0, 1, 0, 0);
-      c.clearRect(0, 0, this.W, this.H);
-      if (!rec.scene) {
-        c.fillStyle = '#200a0a';
-        c.fillRect(0, 0, this.W, this.H);
-      } else {
-        try {
-          rec.scene.render(this.frameFor(e, time, seeked ? 0 : 1 / this.fps, seeked), c);
-        } catch (err) {
-          console.error(`scene ${e.id} render error`, err);
-          c.fillStyle = '#200a0a';
-          c.fillRect(0, 0, this.W, this.H);
-        }
-      }
-      c.restore();
-    };
 
     const [ctxA, ctxB] = this.ctxs;
     const [cvA, cvB] = this.canvases;
     if (transitioning && prev) {
-      draw(prev, ctxA, Math.min(t, prev.end - 1e-3)); // outgoing holds its final frame
-      draw(cur, ctxB, t);
+      this.drawScene(prev, ctxA, { time: Math.min(t, prev.end - 1e-3), seeked }); // outgoing holds its final frame
+      this.drawScene(cur, ctxB, { time: t, seeked });
     } else {
-      draw(cur, ctxB, Math.max(cur.start, Math.min(t, cur.end - 1e-3)));
+      this.drawScene(cur, ctxB, { time: Math.max(cur.start, Math.min(t, cur.end - 1e-3)), seeked });
     }
 
     // final canvas: HUD + post
@@ -200,73 +189,42 @@ export class MontageEngine {
     return cur.id;
   }
 
+  /** The entry playing at t. Unvoiced gaps belong to the preceding scene, not the show's endcard. */
+  private entryAt(t: number): TimelineEntry | undefined {
+    const entries = this.timeline;
+    const idx = entries.findIndex((e) => t >= e.start && t < e.end);
+    // Falling back to the last entry here flashed the closing card between unrelated plates.
+    return idx >= 0 ? entries[idx] : (entries.filter(e => e.start <= t).at(-1) ?? entries[0]);
+  }
+
+  /** Render one scene at the given time onto a layer canvas; a failed scene shows the error plate. */
+  private drawScene(e: TimelineEntry, c: CanvasRenderingContext2D, at: { time: number; seeked: boolean }): void {
+    const rec = this.loaded.get(e.id)!;
+    c.save();
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, this.W, this.H);
+    try {
+      if (!rec.scene) this.errorPlate(c);
+      else rec.scene.render(this.frameFor(e, at.time, at.seeked ? 0 : 1 / this.fps, at.seeked), c);
+    } catch (err) {
+      console.error(`scene ${e.id} render error`, err);
+      this.errorPlate(c);
+    }
+    c.restore();
+  }
+
+  private errorPlate(c: CanvasRenderingContext2D): void {
+    c.fillStyle = '#200a0a';
+    c.fillRect(0, 0, this.W, this.H);
+  }
+
   /** Composite B over A with the given transition, into the visible canvas. */
   private composite(a: HTMLCanvasElement, b: HTMLCanvasElement, kind: string, k: number) {
-    const ctx = this.canvas.getContext('2d', { willReadFrequently: true })!;
-    const W = this.W, H = this.H;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, W, H);
-    const e = ease.inOutCubic(k);
-    switch (kind) {
-      case 'slide': {
-        ctx.drawImage(a, -W * 0.10 * e, 0);
-        ctx.drawImage(b, W * (1 - e), 0);
-        // hairline leading edge
-        ctx.fillStyle = this.theme.accent;
-        ctx.globalAlpha = Math.sin(Math.PI * k) * 0.9;
-        ctx.fillRect(W * (1 - e) - 2, 0, 2, H);
-        ctx.globalAlpha = 1;
-        break;
-      }
-      case 'wipe': {
-        ctx.drawImage(a, 0, 0);
-        const x = W * e;
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(0, 0, x, H);
-        ctx.clip();
-        ctx.drawImage(b, 0, 0);
-        ctx.restore();
-        ctx.fillStyle = this.theme.accent;
-        ctx.globalAlpha = Math.sin(Math.PI * k) * 0.8;
-        ctx.fillRect(x - 1.5, 0, 3, H);
-        ctx.globalAlpha = 1;
-        break;
-      }
-      case 'zoom': {
-        ctx.save();
-        ctx.globalAlpha = 1 - e * 0.9;
-        const s = 1 + 0.10 * e;
-        ctx.translate(W / 2, H / 2); ctx.scale(s, s); ctx.translate(-W / 2, -H / 2);
-        ctx.drawImage(a, 0, 0);
-        ctx.restore();
-        ctx.save();
-        ctx.globalAlpha = e;
-        const s2 = 0.94 + 0.06 * e;
-        ctx.translate(W / 2, H / 2); ctx.scale(s2, s2); ctx.translate(-W / 2, -H / 2);
-        ctx.drawImage(b, 0, 0);
-        ctx.restore();
-        break;
-      }
-      case 'rise': {
-        ctx.globalAlpha = 1 - e * 0.55;
-        ctx.drawImage(a, 0, 0);
-        ctx.globalAlpha = 1;
-        ctx.save();
-        ctx.globalAlpha = Math.min(1, e * 1.6);
-        ctx.drawImage(b, 0, H * 0.18 * (1 - e));
-        ctx.restore();
-        break;
-      }
-      case 'crossfade':
-      default: {
-        ctx.drawImage(a, 0, 0);
-        ctx.globalAlpha = e;
-        ctx.drawImage(b, 0, 0);
-        ctx.globalAlpha = 1;
-        break;
-      }
-    }
+    const layers: TransitionLayers = {
+      ctx: this.canvas.getContext('2d', { willReadFrequently: true })!,
+      a, b, W: this.W, H: this.H, accent: this.theme.accent,
+    };
+    composite(layers, kind, k);
   }
 
   /** RGBA pixels of the final canvas (for the offline renderer). */

@@ -82,25 +82,24 @@ export class Diagram extends Scene {
   }
   override render(f: Frame, ctx: CanvasRenderingContext2D): void {
     const spec = this.ctx.params as DiagramSpec;
-    const nodes = spec.nodes ?? [];
     const style = styleOf(spec);
     ctx.fillStyle = style.bg; ctx.fillRect(0, 0, this.ctx.W, this.ctx.H);
     ctx.save(); ctx.scale(this.ctx.W / 1600, this.ctx.H / 900);
-    if (spec.template === 'blueprint') {
-      ctx.strokeStyle = '#ffffff08'; ctx.lineWidth = 1;
-      for (let x=0;x<1600;x+=32) { ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,900);ctx.stroke(); }
-      for (let y=0;y<900;y+=32) { ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(1600,y);ctx.stroke(); }
-    }
+    if (spec.template === 'blueprint') drawBlueprintGrid(ctx);
     ctx.font = font(42,this.ctx.theme.fontDisplay,700);ctx.fillStyle=style.ink;
     ctx.globalAlpha=clamp(f.lt/0.5);ctx.fillText(spec.headline ?? '',64,88);ctx.globalAlpha=1;
+    const clock = this.clockFor(f, spec);
+    // Draw links underneath the boxes. Default: a link starts after its source has built.
+    this.drawConnectors(ctx, clock, style);
+    this.drawBoxes(ctx, clock, style);
+    ctx.restore();
+  }
+
+  /** When each node starts, and the (possibly stretched) local time everything is evaluated at. */
+  private clockFor(f: Frame, spec: DiagramSpec): Clock {
+    const nodes = spec.nodes ?? [];
     const stagger = Math.max(0, spec.stagger ?? 0.42);
-    const start = (n: DiagramNode, i: number) => {
-      if (n.spoken) {
-        const match = this.ctx.lyrics.lines.find(l => l.sceneId === this.ctx.id && l.text.toLowerCase().includes(n.spoken!.toLowerCase()));
-        if (match) return Math.max(0,match.start-f.start);
-      }
-      return n.at ?? (0.4+i*stagger);
-    };
+    const start = (n: DiagramNode, i: number) => this.nodeStart(n, i, { f, stagger });
     // Fit a visual-only build into its actual recorded scene window, leaving a reading
     // hold. Explicit narration anchors are never sped up or shifted away from the voice.
     const finish = Math.max(1,
@@ -110,50 +109,93 @@ export class Diagram extends Scene {
         return (e.at ?? start(nodes[i]!,i) + (nodes[i]!.duration ?? 0.8)) + (e.duration ?? 0.7);
       }));
     const scale = nodes.some(n => n.spoken) ? 1 : Math.max(1, finish / Math.max(0.5, f.end - f.start - 1.2));
-    const localTime = f.lt * scale;
-    const trace = (g: Geometry, p: number, color: string, pen: boolean) => {
-      ctx.strokeStyle=color;ctx.lineWidth=2.6;ctx.lineJoin='round';ctx.lineCap='round';
-      ctx.setLineDash([g.length,g.length]);ctx.lineDashOffset=g.length*(1-p);ctx.stroke(g.path);ctx.setLineDash([]);ctx.lineDashOffset=0;
-      if (pen && p>0 && p<1) {
-        const tip=g.measure.getPointAtLength(g.length*p);
-        ctx.save();ctx.shadowColor=color;ctx.shadowBlur=16;ctx.fillStyle=style.ink;
-        ctx.beginPath();ctx.arc(tip.x,tip.y,3.5,0,Math.PI*2);ctx.fill();ctx.restore();
-      }
-    };
-    // Draw links underneath the boxes. Default: a link starts after its source has built.
+    return { start, localTime: f.lt * scale, spec, nodes };
+  }
+
+  /** A node starts on its spoken phrase when it has one, else at its time or its staggered slot. */
+  private nodeStart(n: DiagramNode, i: number, timing: { f: Frame; stagger: number }): number {
+    if (n.spoken) {
+      const match = this.ctx.lyrics.lines.find(l => l.sceneId === this.ctx.id && l.text.toLowerCase().includes(n.spoken!.toLowerCase()));
+      if (match) return Math.max(0,match.start-timing.f.start);
+    }
+    return n.at ?? (0.4+i*timing.stagger);
+  }
+
+  private drawConnectors(ctx: CanvasRenderingContext2D, clock: Clock, style: Style): void {
+    const { spec, nodes, localTime } = clock;
     (spec.edges ?? []).forEach((edge,i) => {
       const sourceIndex=nodes.findIndex(n=>n.id===edge.from);
       const source=nodes[sourceIndex]!;
-      const at=edge.at ?? start(source,sourceIndex)+(source.duration ?? 0.8);
+      const at=edge.at ?? clock.start(source,sourceIndex)+(source.duration ?? 0.8);
       const p=ease.outCubic(clamp(inv(at,at+(edge.duration ?? 0.7),localTime)));
       if(p<=0)return;
-      const g=this.connectors[i]!;trace(g,p,style.stroke,style.pen || spec.effect==='pen');
-      if(p>0.92) {
-        const end=g.measure.getPointAtLength(g.length), prev=g.measure.getPointAtLength(Math.max(0,g.length-2));
-        const a=Math.atan2(end.y-prev.y,end.x-prev.x);
-        ctx.save();ctx.globalAlpha=clamp((p-0.92)/0.08);ctx.translate(end.x,end.y);ctx.rotate(a);
-        ctx.beginPath();ctx.moveTo(-12,-6);ctx.lineTo(0,0);ctx.lineTo(-12,6);ctx.stroke();ctx.restore();
-      }
+      const g=this.connectors[i]!;
+      trace(ctx, g, { p, color: style.stroke, pen: style.pen || spec.effect==='pen' }, style.ink);
+      if(p>0.92) drawArrowhead(ctx, g, p);
     });
+  }
+
+  private drawBoxes(ctx: CanvasRenderingContext2D, clock: Clock, style: Style): void {
+    const { spec, nodes, localTime } = clock;
     nodes.forEach((node,i) => {
-      const at=start(node,i), duration=Math.max(0.1,node.duration ?? 0.8);
+      const at=clock.start(node,i), duration=Math.max(0.1,node.duration ?? 0.8);
       const raw=clamp(inv(at,at+duration,localTime)), p=ease.outCubic(raw);
       if(p<=0)return;
-      const g=this.boxes[i]!, {w,h}=dimensions(node), effect=node.effect ?? spec.effect ?? 'draw';
-      ctx.save();
-      if(effect==='pop') { const s=1-Math.pow(1-raw,3);ctx.translate(node.x+w/2,node.y+h/2);ctx.scale(s,s);ctx.translate(-node.x-w/2,-node.y-h/2); }
-      if(effect==='slide')ctx.translate(0,24*(1-p));
-      const fill=effect==='draw'||effect==='pen' ? clamp(inv(0.45,1,raw)) : p;
-      ctx.globalAlpha=fill;ctx.fillStyle=style.fill;ctx.fill(g.path);ctx.globalAlpha=1;
-      if(effect==='wipe') {ctx.beginPath();ctx.rect(node.x,node.y,w*p,h);ctx.clip();}
-      if(effect==='fade'||effect==='pop'||effect==='slide')ctx.globalAlpha=p;
-      trace(g,effect==='draw'||effect==='pen'?p:1,node.color ?? style.stroke,effect==='pen'||style.pen);
-      const labelAlpha=clamp(inv(0.6,1,raw));ctx.globalAlpha*=labelAlpha;
-      const fit=fitText(ctx,node.label,this.ctx.theme.fontDisplay,600,w-30,h-24,3,34,16);
-      ctx.font=font(fit.size,this.ctx.theme.fontDisplay,600);ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle=style.ink;
-      fit.lines.forEach((line,j)=>ctx.fillText(line.text,node.x+w/2,node.y+h/2+(j-(fit.lines.length-1)/2)*fit.size*1.18));
-      ctx.restore();
+      this.drawBox(ctx, { node, g: this.boxes[i]!, effect: node.effect ?? spec.effect ?? 'draw' }, { raw, p, style });
     });
+  }
+
+  private drawBox(ctx: CanvasRenderingContext2D, box: { node: DiagramNode; g: Geometry; effect: string }, build: { raw: number; p: number; style: Style }): void {
+    const { node, g, effect } = box;
+    const { raw, p, style } = build;
+    const {w,h}=dimensions(node);
+    const drawn = effect==='draw'||effect==='pen';
+    ctx.save();
+    if(effect==='pop') { const s=1-Math.pow(1-raw,3);ctx.translate(node.x+w/2,node.y+h/2);ctx.scale(s,s);ctx.translate(-node.x-w/2,-node.y-h/2); }
+    if(effect==='slide')ctx.translate(0,24*(1-p));
+    const fill=drawn ? clamp(inv(0.45,1,raw)) : p;
+    ctx.globalAlpha=fill;ctx.fillStyle=style.fill;ctx.fill(g.path);ctx.globalAlpha=1;
+    if(effect==='wipe') {ctx.beginPath();ctx.rect(node.x,node.y,w*p,h);ctx.clip();}
+    if(effect==='fade'||effect==='pop'||effect==='slide')ctx.globalAlpha=p;
+    trace(ctx, g, { p: drawn?p:1, color: node.color ?? style.stroke, pen: effect==='pen'||style.pen }, style.ink);
+    const labelAlpha=clamp(inv(0.6,1,raw));ctx.globalAlpha*=labelAlpha;
+    this.drawLabel(ctx, node, { w, h, style });
     ctx.restore();
   }
+
+  private drawLabel(ctx: CanvasRenderingContext2D, node: DiagramNode, size: { w: number; h: number; style: Style }): void {
+    const { w, h, style } = size;
+    const fit=fitText(ctx,node.label,this.ctx.theme.fontDisplay,600,w-30,h-24,3,34,16);
+    ctx.font=font(fit.size,this.ctx.theme.fontDisplay,600);ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle=style.ink;
+    fit.lines.forEach((line,j)=>ctx.fillText(line.text,node.x+w/2,node.y+h/2+(j-(fit.lines.length-1)/2)*fit.size*1.18));
+  }
+}
+
+type Style = ReturnType<typeof styleOf>;
+interface Clock { start: (n: DiagramNode, i: number) => number; localTime: number; spec: DiagramSpec; nodes: DiagramNode[] }
+
+function drawBlueprintGrid(ctx: CanvasRenderingContext2D): void {
+  ctx.strokeStyle = '#ffffff08'; ctx.lineWidth = 1;
+  for (let x=0;x<1600;x+=32) { ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,900);ctx.stroke(); }
+  for (let y=0;y<900;y+=32) { ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(1600,y);ctx.stroke(); }
+}
+
+/** Stroke a geometry progressively (dash trick); a pen tip glows at the leading point. */
+function trace(ctx: CanvasRenderingContext2D, g: Geometry, look: { p: number; color: string; pen: boolean }, ink: string): void {
+  const { p, color, pen } = look;
+  ctx.strokeStyle=color;ctx.lineWidth=2.6;ctx.lineJoin='round';ctx.lineCap='round';
+  ctx.setLineDash([g.length,g.length]);ctx.lineDashOffset=g.length*(1-p);ctx.stroke(g.path);ctx.setLineDash([]);ctx.lineDashOffset=0;
+  if (pen && p>0 && p<1) {
+    const tip=g.measure.getPointAtLength(g.length*p);
+    ctx.save();ctx.shadowColor=color;ctx.shadowBlur=16;ctx.fillStyle=ink;
+    ctx.beginPath();ctx.arc(tip.x,tip.y,3.5,0,Math.PI*2);ctx.fill();ctx.restore();
+  }
+}
+
+/** Arrow tip fading in at the end of a nearly complete connector. */
+function drawArrowhead(ctx: CanvasRenderingContext2D, g: Geometry, p: number): void {
+  const end=g.measure.getPointAtLength(g.length), prev=g.measure.getPointAtLength(Math.max(0,g.length-2));
+  const a=Math.atan2(end.y-prev.y,end.x-prev.x);
+  ctx.save();ctx.globalAlpha=clamp((p-0.92)/0.08);ctx.translate(end.x,end.y);ctx.rotate(a);
+  ctx.beginPath();ctx.moveTo(-12,-6);ctx.lineTo(0,0);ctx.lineTo(-12,6);ctx.stroke();ctx.restore();
 }

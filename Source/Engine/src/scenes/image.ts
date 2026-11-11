@@ -196,29 +196,25 @@ export class ImageScene extends Scene {
     const { lt, underY } = at;
     if (headline) {
       const hk = ease.outCubic(clamp(inv(0.55, 1.1, lt)));
-      if (hk > 0) {
-        ctx.save();
-        ctx.globalAlpha = hk;
-        ctx.font = font(44, theme.fontDisplay, 600);
-        ctx.fillStyle = theme.ink;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'alphabetic';
-        ctx.fillText(ellipsize(ctx, headline, W * 0.86), W / 2, underY + (1 - hk) * 10);
-        ctx.restore();
-      }
+      this.drawCaptionLine(ctx, { alpha: hk, size: 44, text: headline, maxW: W * 0.86, y: underY + (1 - hk) * 10 }, theme.ink, 'display');
     }
     if (text) {
       const tk = ease.outCubic(clamp(inv(0.75, 1.3, lt)));
-      if (tk > 0) {
-        ctx.save();
-        ctx.globalAlpha = tk * 0.9;
-        ctx.font = font(24, theme.fontBody, 400);
-        ctx.fillStyle = theme.dim;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'alphabetic';
-        ctx.fillText(ellipsize(ctx, text, W * 0.8), W / 2, underY + (headline ? 44 : 0) + (1 - tk) * 8);
-        ctx.restore();
-      }
+      this.drawCaptionLine(ctx, { alpha: tk * 0.9, size: 24, text: text, maxW: W * 0.8, y: underY + (headline ? 44 : 0) + (1 - tk) * 8 }, theme.dim, 'body');
     }
+  }
+
+  /** One centered caption line; skipped while it is still invisible. */
+  private drawCaptionLine(ctx: CanvasRenderingContext2D, line: { alpha: number; size: number; text: string; maxW: number; y: number }, color: string, face: 'display' | 'body'): void {
+    const { W, theme } = this.ctx;
+    if (line.alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = line.alpha;
+    ctx.font = face === 'display' ? font(line.size, theme.fontDisplay, 600) : font(line.size, theme.fontBody, 400);
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(ellipsize(ctx, line.text, line.maxW), W / 2, line.y);
+    ctx.restore();
   }
 }

@@ -3,7 +3,8 @@
 export const clamp = (x: number, lo = 0, hi = 1) => (x < lo ? lo : x > hi ? hi : x);
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 export const inv = (a: number, b: number, x: number) => (b === a ? 0 : (x - a) / (b - a));
-export const remap = (x: number, a: number, b: number, c: number, d: number) => lerp(c, d, clamp(inv(a, b, x)));
+/** Map x from the [from[0], from[1]] range into [to[0], to[1]], clamped. */
+export const remap = (x: number, from: readonly [number, number], to: readonly [number, number]) => lerp(to[0], to[1], clamp(inv(from[0], from[1], x)));
 export const ease = {
   linear: (t: number) => t,
   outCubic: (t: number) => 1 - Math.pow(1 - t, 3),

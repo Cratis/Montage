@@ -101,46 +101,39 @@ export class Kinetic extends Scene {
 
   private drawWord(ctx: CanvasRenderingContext2D, w: Word, box: { cx: number; cy: number; width: number }, state: { beat: Beat; isCurrent: boolean; lineAlpha: number; hold: number }): void {
     const { theme } = this.ctx;
-    const { beat, isCurrent, lineAlpha, hold } = state;
+    const { beat, hold } = state;
     const t = beat.t;
     const prog = Lyrics.wordProgress(w, t, hold);
     const active = prog > 0 && t < w.end + hold;
     // pop on word onset, decaying through the word
-    const popT = clamp((t - w.start) / 0.22);
-    const pop = active ? Math.sin(Math.PI * popT) * 0.06 : 0;
-    const spoken = prog >= 1;
-    const upcoming = prog <= 0;
-
-    let fill = theme.ink;
-    let alpha = lineAlpha;
-    if (upcoming) alpha *= 0.32;
-    if (active) { alpha = 1; }
-    if (spoken && isCurrent && !active) alpha = 0.62;
-
+    const pop = active ? Math.sin(Math.PI * clamp((t - w.start) / 0.22)) * 0.06 : 0;
     const emph = isParamEmphasis(this.ctx.params, w.w);
-    if (emph) { fill = theme.accent; alpha = Math.max(alpha, 0.95); }
+    const alpha = wordAlpha(state, prog, active, emph);
 
     ctx.save();
     ctx.translate(box.cx, box.cy);
     ctx.scale(1 + pop, 1 + pop);
     ctx.globalAlpha = clamp(alpha) * beat.entrance;
-    ctx.fillStyle = fill;
+    ctx.fillStyle = emph ? theme.accent : theme.ink;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     // karaoke fill: clip a wipe over the word while it is being spoken
-    if (active && !emph) {
-      ctx.fillStyle = withAlpha(theme.ink, 0.28);
-      ctx.fillText(w.w, 0, 0);
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(-box.width / 2, -beat.size, box.width * ease.linear(prog), beat.size * 2);
-      ctx.clip();
-      ctx.fillStyle = theme.ink;
-      ctx.fillText(w.w, 0, 0);
-      ctx.restore();
-    } else {
-      ctx.fillText(w.w, 0, 0);
-    }
+    if (active && !emph) this.drawWipe(ctx, w, box, { prog, size: beat.size });
+    else ctx.fillText(w.w, 0, 0);
+    ctx.restore();
+  }
+
+  /** Dim word with an ink wipe clipped over it, proportional to the spoken progress. */
+  private drawWipe(ctx: CanvasRenderingContext2D, w: Word, box: { width: number }, spoken: { prog: number; size: number }): void {
+    const { theme } = this.ctx;
+    ctx.fillStyle = withAlpha(theme.ink, 0.28);
+    ctx.fillText(w.w, 0, 0);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(-box.width / 2, -spoken.size, box.width * ease.linear(spoken.prog), spoken.size * 2);
+    ctx.clip();
+    ctx.fillStyle = theme.ink;
+    ctx.fillText(w.w, 0, 0);
     ctx.restore();
   }
 
@@ -195,6 +188,15 @@ function layoutRows(ctx: CanvasRenderingContext2D, show: Line[], fit: { maxW: nu
     if (current.length) rows.push({ line: l, indices: current, width: currentW, widths });
   }
   return rows;
+}
+
+/** Opacity of a word: faint ahead, full while spoken, soft once past; emphasis stays strong. */
+function wordAlpha(state: { isCurrent: boolean; lineAlpha: number }, prog: number, active: boolean, emph: boolean): number {
+  let alpha = state.lineAlpha;
+  if (prog <= 0) alpha *= 0.32;
+  if (active) alpha = 1;
+  else if (prog >= 1 && state.isCurrent) alpha = 0.62;
+  return emph ? Math.max(alpha, 0.95) : alpha;
 }
 
 /** A word is emphasised when params.emphasis (string | string[]) matches it loosely. */

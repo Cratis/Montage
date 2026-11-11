@@ -95,14 +95,15 @@ export class Compare extends Scene {
     ctx.textBaseline = 'alphabetic';
     ctx.fillText(ellipsize(ctx, String(p.title ?? ''), panelW - 60), x + 30, y0 + 92);
 
-    this.drawPoints(ctx, f, layout, side, k);
+    this.drawPoints(ctx, f, layout, { side, k });
     ctx.restore();
   }
 
-  private drawPoints(ctx: CanvasRenderingContext2D, f: Frame, layout: Layout, side: Side, k: number): void {
+  private drawPoints(ctx: CanvasRenderingContext2D, f: Frame, layout: Layout, shown: { side: Side; k: number }): void {
     const { theme } = this.ctx;
     const { panelW, panelH, y0 } = layout;
-    const { data: p, x, accent, delay } = side;
+    const { data: p, x, accent, delay } = shown.side;
+    const k = shown.k;
     const points: string[] = Array.isArray(p.points) ? p.points.map(String) : [];
     const span = Math.max(0.4, (f.end - f.start) * 0.5);
     points.forEach((pt, i) => {
