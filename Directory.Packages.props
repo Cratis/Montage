@@ -4,8 +4,8 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Aspire -->
-    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.6.4" />
-    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.6.4" />
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.6.5" />
+    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.6.5" />
     <!-- Cratis -->
     <!-- Keep the public Cratis / Arc family aligned so generated self-bindings and runtime contracts
          are built against the same Chronicle contract generation. -->
