@@ -14,6 +14,21 @@ import { PreviewPanel } from './panels/PreviewPanel';
 import { TimingPanel } from './panels/TimingPanel';
 import { VisualsPanel } from './panels/VisualsPanel';
 
+function pausePreview(frame: HTMLIFrameElement | null | undefined) {
+    frame?.contentWindow?.postMessage('montage:pause', '*');
+}
+
+function SceneHeader({ scene, meta, sceneNumber, onClose }: { scene: Scene; meta?: SceneMeta; sceneNumber: number; onClose: () => void }) {
+    return (
+        <div className='flex items-center gap-3 mb-4'>
+            <span className='mono text-xs text-[var(--cr-montage-faint)]'>{pad2(sceneNumber)}</span>
+            <h2 className='display text-xl font-bold'>{TYPES.find((t) => t.value === scene.type)?.label ?? scene.type}</h2>
+            <span className='mono text-[11px] text-[var(--cr-montage-faint)]'>{meta ? `${meta.offset.toFixed(1)}s · ${meta.duration.toFixed(1)}s` : 'not spoken yet'}</span>
+            <button className='ml-auto w-8 h-8 grid place-items-center hover:text-[var(--cr-montage-ink)] text-[var(--cr-montage-faint)]' onClick={onClose}>✕</button>
+        </div>
+    );
+}
+
 /**
  * The scene inspector: the engine playing the scene with its voice, and every property the
  * scene has - content parameters, narration, motion preset and description, recorded timing.
@@ -51,8 +66,8 @@ export function SceneInspector({
 
     const switchTab = (id: (typeof TABS)[number]['id']) => {
         // leaving a tab with a live preview pauses it - a hidden iframe would keep playing
-        if (tab === 'preview' && id !== 'preview') iframeRef.current?.contentWindow?.postMessage('montage:pause', '*');
-        if (tab === 'timing' && id !== 'timing') timingPreviewHolder.current?.current?.contentWindow?.postMessage('montage:pause', '*');
+        if (tab === 'preview' && id !== 'preview') pausePreview(iframeRef.current);
+        if (tab === 'timing' && id !== 'timing') pausePreview(timingPreviewHolder.current?.current);
         setTab(id);
     };
 
@@ -61,12 +76,7 @@ export function SceneInspector({
             <div
                 className='panel panel-accent w-full max-w-4xl max-h-[92vh] overflow-y-auto p-6'
                 onClick={(e) => e.stopPropagation()}>
-                <div className='flex items-center gap-3 mb-4'>
-                    <span className='mono text-xs text-[var(--cr-montage-faint)]'>{pad2(sceneNumber)}</span>
-                    <h2 className='display text-xl font-bold'>{TYPES.find((t) => t.value === scene.type)?.label ?? scene.type}</h2>
-                    <span className='mono text-[11px] text-[var(--cr-montage-faint)]'>{meta ? `${meta.offset.toFixed(1)}s · ${meta.duration.toFixed(1)}s` : 'not spoken yet'}</span>
-                    <button className='ml-auto w-8 h-8 grid place-items-center hover:text-[var(--cr-montage-ink)] text-[var(--cr-montage-faint)]' onClick={onClose}>✕</button>
-                </div>
+                <SceneHeader scene={scene} meta={meta} sceneNumber={sceneNumber} onClose={onClose} />
 
                 <div className='flex gap-1 mb-5 border-b border-[rgba(255,255,255,0.08)] pb-2'>
                     {TABS.map((t) => (

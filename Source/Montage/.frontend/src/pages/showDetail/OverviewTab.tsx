@@ -14,14 +14,26 @@ import { retryable, stageFlow } from './stageFlow';
 
 type StageEntry = (typeof stageFlow)[number];
 
+function stageDot(failed: boolean, done: boolean, active: boolean): string {
+    if (failed) return 'failed';
+    if (done) return 'done';
+    return active ? 'active pulsing' : '';
+}
+
+function stageTone(done: boolean, active: boolean): string {
+    if (done) return 'text-[var(--cr-montage-dim)]';
+    return active ? 'text-[var(--cr-montage-ink)]' : 'text-[var(--cr-montage-faint)]';
+}
+
 function PipelineStage({ entry, show, stageIndex }: { entry: StageEntry; show: Show; stageIndex: number }) {
     const index = stageFlow.findIndex((s) => s.status === entry.status);
-    const done = show.status === 'Rendered' || (stageIndex >= 0 && index < stageIndex);
-    const active = stageIndex >= 0 && stageFlow[stageIndex].status === entry.status;
+    const started = stageIndex >= 0;
+    const done = show.status === 'Rendered' || (started && index < stageIndex);
+    const active = started && stageFlow[stageIndex].status === entry.status;
     const failed = show.status === 'Failed' && show.stage === entry.stage;
     const retry = retryStageFor(entry.stage, show);
-    const dot = failed ? 'failed' : done ? 'done' : active ? 'active pulsing' : '';
-    const tone = done ? 'text-[var(--cr-montage-dim)]' : active ? 'text-[var(--cr-montage-ink)]' : 'text-[var(--cr-montage-faint)]';
+    const dot = stageDot(failed, done, active);
+    const tone = stageTone(done, active);
     return (
         <div className='flex items-center gap-2'>
             <span className={`stage-dot ${dot}`} />
@@ -32,59 +44,92 @@ function PipelineStage({ entry, show, stageIndex }: { entry: StageEntry; show: S
     );
 }
 
+function FailureBanner({ show }: { show: Show }) {
+    return (
+        <div className='panel p-4 mb-6 border-l-4' style={{ borderLeftColor: '#e5484d' }}>
+            <div className='mono text-xs text-[#e5484d] mb-1'>{show.stage} failed</div>
+            <p className='text-sm text-[var(--cr-montage-dim)]'>{show.error}</p>
+        </div>
+    );
+}
+
+function PipelineSection({ show, showJobs, stageIndex }: { show: Show; showJobs: JobActivity[]; stageIndex: number }) {
+    return (
+        <section className='panel p-5 mb-6'>
+            <div className='eyebrow mb-4'>pipeline</div>
+            <div className='flex items-center gap-2 flex-wrap'>
+                {stageFlow.filter((s) => !s.status.endsWith('ing')).map((entry) => (
+                    <PipelineStage key={entry.status} entry={entry} show={show} stageIndex={stageIndex} />
+                ))}
+            </div>
+            {show.status === 'Rendering' && (
+                <p className='text-xs text-[var(--cr-montage-dim)] mt-3'>
+                    Rendering captures every frame in headless Chrome and encodes with ffmpeg — a minute or two per minute of video.
+                </p>
+            )}
+            {showJobs.length > 0 && (
+                <div className='mt-5 pt-4 border-t border-[rgba(255,255,255,0.08)]'>
+                    <div className='eyebrow mb-3'>jobs</div>
+                    <div className='flex flex-col gap-2'>
+                        {showJobs.slice(0, 4).map((job) => <JobRow key={job.jobId.toString()} job={job} />)}
+                    </div>
+                </div>
+            )}
+        </section>
+    );
+}
+
+function RenderCard({ show, videoRef }: { show: Show; videoRef: React.RefObject<HTMLVideoElement | null> }) {
+    return (
+        <div className='panel p-5 lg:col-span-2'>
+            <div className='eyebrow mb-3'>render</div>
+            <video
+                ref={videoRef}
+                controls
+                className='w-full rounded-lg border hairline'
+                src={`/packages/${show.id}/${show.videoPath}`}
+            />
+            <div className='flex items-center gap-4 mt-3 mono text-xs text-[var(--cr-montage-faint)]'>
+                <span>{Math.round(show.videoDurationSeconds)}s</span>
+                <span>{(show.videoSizeBytes / 1024 / 1024).toFixed(1)} MB</span>
+                <a className='hover:text-[var(--cr-montage-ink)]' href={`/packages/${show.id}/${show.videoPath}`} download>download</a>
+            </div>
+        </div>
+    );
+}
+
+function PackageCard({ show }: { show: Show }) {
+    return (
+        <div className='panel p-5'>
+            <div className='eyebrow mb-3'>package</div>
+            <p className='text-sm text-[var(--cr-montage-dim)] mb-3'>
+                Spec, voiceover and timing data — everything the engine renders from.
+            </p>
+            <div className='flex gap-2'>
+                <a href={`/packages/${show.id}/package.zip`} download>
+                    <Button label='package.zip' icon='pi pi-download' severity='secondary' text />
+                </a>
+                <Link to={`/preview/index.html?pkg=/packages/${show.id}/package/&back=/shows/${show.id}`} target='_blank'>
+                    <Button label='Preview in engine' icon='pi pi-play' severity='secondary' text />
+                </Link>
+            </div>
+        </div>
+    );
+}
+
 /** The overview tab: failure banner, pipeline with its jobs, and the produced artifacts. */
 export function OverviewTab({ show, showJobs, videoRef }: { show: Show; showJobs: JobActivity[]; videoRef: React.RefObject<HTMLVideoElement | null> }) {
     const stageIndex = stageFlow.findIndex((s) => s.status === show.status);
     return (
         <>
-            {show.error && (
-                <div className='panel p-4 mb-6 border-l-4' style={{ borderLeftColor: '#e5484d' }}>
-                    <div className='mono text-xs text-[#e5484d] mb-1'>{show.stage} failed</div>
-                    <p className='text-sm text-[var(--cr-montage-dim)]'>{show.error}</p>
-                </div>
-            )}
+            {show.error && <FailureBanner show={show} />}
 
             {/* pipeline */}
-            <section className='panel p-5 mb-6'>
-                <div className='eyebrow mb-4'>pipeline</div>
-                <div className='flex items-center gap-2 flex-wrap'>
-                    {stageFlow.filter((s) => !s.status.endsWith('ing')).map((entry) => (
-                        <PipelineStage key={entry.status} entry={entry} show={show} stageIndex={stageIndex} />
-                    ))}
-                </div>
-                {show.status === 'Rendering' && (
-                    <p className='text-xs text-[var(--cr-montage-dim)] mt-3'>
-                        Rendering captures every frame in headless Chrome and encodes with ffmpeg — a minute or two per minute of video.
-                    </p>
-                )}
-                {showJobs.length > 0 && (
-                    <div className='mt-5 pt-4 border-t border-[rgba(255,255,255,0.08)]'>
-                        <div className='eyebrow mb-3'>jobs</div>
-                        <div className='flex flex-col gap-2'>
-                            {showJobs.slice(0, 4).map((job) => <JobRow key={job.jobId.toString()} job={job} />)}
-                        </div>
-                    </div>
-                )}
-            </section>
+            <PipelineSection show={show} showJobs={showJobs} stageIndex={stageIndex} />
 
             {/* artifacts */}
             <section className='grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6'>
-                {show.videoPath && (
-                    <div className='panel p-5 lg:col-span-2'>
-                        <div className='eyebrow mb-3'>render</div>
-                        <video
-                            ref={videoRef}
-                            controls
-                            className='w-full rounded-lg border hairline'
-                            src={`/packages/${show.id}/${show.videoPath}`}
-                        />
-                        <div className='flex items-center gap-4 mt-3 mono text-xs text-[var(--cr-montage-faint)]'>
-                            <span>{Math.round(show.videoDurationSeconds)}s</span>
-                            <span>{(show.videoSizeBytes / 1024 / 1024).toFixed(1)} MB</span>
-                            <a className='hover:text-[var(--cr-montage-ink)]' href={`/packages/${show.id}/${show.videoPath}`} download>download</a>
-                        </div>
-                    </div>
-                )}
+                {show.videoPath && <RenderCard show={show} videoRef={videoRef} />}
 
                 {show.audioPath && (
                     <div className='panel p-5'>
@@ -93,22 +138,7 @@ export function OverviewTab({ show, showJobs, videoRef }: { show: Show; showJobs
                     </div>
                 )}
 
-                {show.packageZip && (
-                    <div className='panel p-5'>
-                        <div className='eyebrow mb-3'>package</div>
-                        <p className='text-sm text-[var(--cr-montage-dim)] mb-3'>
-                            Spec, voiceover and timing data — everything the engine renders from.
-                        </p>
-                        <div className='flex gap-2'>
-                            <a href={`/packages/${show.id}/package.zip`} download>
-                                <Button label='package.zip' icon='pi pi-download' severity='secondary' text />
-                            </a>
-                            <Link to={`/preview/index.html?pkg=/packages/${show.id}/package/&back=/shows/${show.id}`} target='_blank'>
-                                <Button label='Preview in engine' icon='pi pi-play' severity='secondary' text />
-                            </Link>
-                        </div>
-                    </div>
-                )}
+                {show.packageZip && <PackageCard show={show} />}
             </section>
         </>
     );
