@@ -43,15 +43,14 @@ public sealed partial class EngineStills(IOptions<MontageOptions> options, IHost
         Directory.CreateDirectory(outputFolder);
         foreach (var stale in Directory.EnumerateFiles(outputFolder, "scene-*.png")) File.Delete(stale);
 
-        var arguments = new List<string>
-        {
-            script, "stills",
-            "--pkg", packageDirectory,
-            "--t", string.Join(',', times.Select(t => t.ToString(System.Globalization.CultureInfo.InvariantCulture))),
-            "--out", outputFolder,
-        };
-
-        var psi = new ProcessStartInfo(render.Node, arguments)
+        var psi = new ProcessStartInfo(
+            render.Node,
+            [
+                script, "stills",
+                "--pkg", packageDirectory,
+                "--t", string.Join(',', times.Select(t => t.ToString(System.Globalization.CultureInfo.InvariantCulture))),
+                "--out", outputFolder,
+            ])
         {
             WorkingDirectory = workingDirectory,
             RedirectStandardOutput = true,

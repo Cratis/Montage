@@ -51,17 +51,16 @@ public sealed partial class EngineRenderer(
             artifactStore.RendersFolderFor(showId),
             $"{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.mp4");
 
-        var arguments = new List<string>
-        {
-            script, "video",
-            "--pkg", packageDirectory,
-            "--out", outputPath,
-            "--fps", render.Fps.ToString(CultureInfo.InvariantCulture),
-            "--crf", render.Crf.ToString(CultureInfo.InvariantCulture),
-            "--preset", render.Preset,
-        };
-
-        var psi = new ProcessStartInfo(render.Node, arguments)
+        var psi = new ProcessStartInfo(
+            render.Node,
+            [
+                script, "video",
+                "--pkg", packageDirectory,
+                "--out", outputPath,
+                "--fps", render.Fps.ToString(CultureInfo.InvariantCulture),
+                "--crf", render.Crf.ToString(CultureInfo.InvariantCulture),
+                "--preset", render.Preset,
+            ])
         {
             WorkingDirectory = workingDirectory,
             RedirectStandardOutput = true,
