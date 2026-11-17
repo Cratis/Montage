@@ -18,7 +18,17 @@
 - Guarded interaction diagnostics
 - UI profile shell: root template, options, appearance
 - Design systems and themes (PLAY0916-PLAY0930)
+- Provided values (PLAY1119-PLAY1129)
+- Audiences and availability (PLAY1130-PLAY1141)
 - Sinks (PLAY0931-PLAY0939)
+- Passive read models (PLAY0858-PLAY0860)
+- Graph queries and `foreach` (PLAY0878-PLAY0886)
+- Graph query `collect` (PLAY1144-PLAY1147)
+- Set once, dictionary keys and children ordering (PLAY0956-PLAY0963)
+- Development users (PLAY0888-PLAY0889)
+- Storylines (PLAY0940-PLAY0943)
+- Free screens, shapes and adoptions
+- Screen visuals and slice placements (PLAY0950-PLAY0955)
 - Structural completeness and timeline checks
 - Editor versus C# verdicts
 - Consistency errors (V1: the model contradicts itself)
@@ -49,6 +59,7 @@ then STAGE (V5 admission). Tool differences: `../SKILL.md` ("Tool versions and t
 | PLAY0381 | projection-level `key` routes nothing | put `key` on each `from` |
 | PLAY0455 | quoted import glob matches no file | fix the glob |
 | PLAY0196/0197/0198 | unknown query/screen; ambiguous bare name | declare or qualify `Slice.Name` |
+| PLAY1142 | a projection mapping, AutoMap or reducer copies a `secret` concept into a read model (Screenplay 6.28.0+) | leave it out or map a non-secret derived value |
 
 ## Source reference and identifier checks
 
@@ -57,7 +68,8 @@ These are V1 source checks, not binding-only gaps:
 | Code | Severity | Meaning |
 | --- | --- | --- |
 | PLAY0514 | W | Projection mapping, children or nested target absent from the declared read-model/element shape; unknown/imported shapes are not guessed |
-| PLAY0166 | W | Unknown event, including `remove with`, `remove via join on` and capture `append` |
+| PLAY0166 | W/E | Unknown event, including `remove with`, `remove via join on` and capture `append`. An unresolved qualified `from` input of a `source events` capture is an error (Screenplay 5.4.0); unknown bare inputs and other usages stay warnings |
+| PLAY1142 | W | Projection or reducer copies a `secret` (incl. `pii secret`) concept into a read-model property; no automatic repair (Screenplay 6.28.0+) |
 | PLAY0515 | E | Personal/secret concept in a command identifier, typed `for` destination, event-source identity, stream-id type/part or route mapping source (including nested paths); keep a surrogate identity and protected data in payload |
 
 Legacy compliance spellings (`@pii`/`@sensitive`) do not evade PLAY0515.
@@ -352,6 +364,35 @@ Requires a Screenplay release that carries design systems (next minor after 6.2.
 | PLAY0929 | W | `accent`, `corners` or `font` in a profile's `appearance` is deprecated; put the value in the theme. |
 | PLAY0930 | E | A theme's `implements`, `palette`, `values` or mode block is malformed or repeated. |
 
+## Provided values (PLAY1119-PLAY1129)
+
+`provide` needs Screenplay 6.25.0. Fix by changing the model; PLAY0268 reports executing it.
+
+| Code | Fix |
+| --- | --- |
+| PLAY1119-PLAY1122 | write `provide <name> <Type> [optional] from <source>`; a source is `query`, `host`, a literal, a `$context` expression, a `file` or an inline body, never a body beside `from` |
+| PLAY1123 | one declaration per name per level; override lower down instead |
+| PLAY1124 | `tenant`, `identity`, `causedBy`, `causation`, `occurred`, `audiences`, `command`, `arguments` are reserved; rename |
+| PLAY1125 | an override keeps the type |
+| PLAY1126-PLAY1128 | the source query must be declared once, keyed, snapshot (not observable) and return the provided type |
+| PLAY1129 | break the read cycle between provided values |
+
+## Audiences and availability (PLAY1130-PLAY1141)
+
+Requires Screenplay 6.26.0. Errors fix the line; warnings leave the gate closed, never open.
+
+| Code | Fix |
+| --- | --- |
+| PLAY1130-PLAY1132 | shapes: `audience <Name>` with `description` only; `availability <Name>` with `description`, `for`, `when`, `with`; `available for \| when \| with <operand>` |
+| PLAY1133, PLAY1134 | declare each audience and availability once |
+| PLAY1135, PLAY1136 | W: declare the audience or availability, or correct the name; undeclared means nothing can grant it |
+| PLAY1137 | break the `with` cycle |
+| PLAY1138 | W: provide the value at or above the gate, or change the condition |
+| PLAY1139 | W: align the audiences of invoker and command, or accept the refusal; `when` is skipped, reactions are never gated |
+| PLAY1140, PLAY1141 | an `available for`/`with` line holds names, `and`, `or` and balanced parentheses only |
+
+See `../../cratis-screenplay-availability/SKILL.md`.
+
 ## Sinks (PLAY0931-PLAY0939)
 
 Requires Screenplay 6.4.0 (`screenplay --version`). A `sink <Name> for readmodels|graphs`
@@ -370,6 +411,126 @@ is information PLAY0270, outside the ESM. The fixes are in
 | PLAY0937 | W | A read model or graph repeats the same `sink` line. |
 | PLAY0938 | W | A declared sink no read model or graph uses. |
 | PLAY0939 | W | A read-model property `sink` whose type differs only in case from a declared sink. Spell the sink exactly, or write `@sink <Type>`. |
+
+## Passive read models (PLAY0858-PLAY0860)
+
+Requires Screenplay 5.3.0 (`screenplay --version`). A bare `passive` line in a read model body
+marks one that only informs command decisions. The fixes are in
+`../../cratis-screenplay-read-surface/references/passive.md`; a passive read model that names a sink is PLAY0935.
+
+| Code | Severity | Meaning / fix |
+| --- | --- | --- |
+| PLAY0858 | W | A read model repeats the `passive` line. Keep one. |
+| PLAY0859 | E | A `query` returns a passive read model, or a `screen` `data` line binds one. Only commands may read it: remove `passive` or use an active read model. |
+| PLAY0860 | W | No command `reads` the passive read model. Add the read or remove `passive`. |
+
+Only the C# compiler reports PLAY0859 and PLAY0860; the TypeScript compiler reports PLAY0858 only.
+
+## Graph queries and `foreach` (PLAY0878-PLAY0886)
+
+Requires Screenplay 5.8.0 or later (`screenplay --version`); `foreach` (PLAY0886) needs 5.10.0. A
+`query` ending in `graph <Graph>` follows a path with `match` and `return`. The complete model and
+fixes are in
+`../../cratis-screenplay-projections/references/graphs.md`; the graph declaration and projection
+codes PLAY0862-PLAY0877 are listed there too.
+
+| Code | Severity | Meaning / fix |
+| --- | --- | --- |
+| PLAY0878 | E | A graph query is malformed: header, `match` pattern, `where` condition or `return` block. |
+| PLAY0879 | E | It names an undeclared graph, node label, edge type, alias or property. |
+| PLAY0880 | E | A hop uses an edge that does not connect those two labels in that direction. |
+| PLAY0881 | E | It does not return exactly the properties its read model requires, or returns the wrong type. |
+| PLAY0882 | E | A condition uses an undeclared argument or compares values of different types. |
+| PLAY0883 | E | An `optional match` value goes to a read-model property that is not optional. Make it optional. |
+| PLAY0884 | E | The same alias is used twice. |
+| PLAY0885 | E | It uses variable-length paths, `or`, ranges, functions or aggregates; none exist. |
+| PLAY0886 | E | A graph handler's `foreach` names a collection inside another, or something that is not a list of a composite type of the event. |
+
+## Graph query `collect` (PLAY1144-PLAY1147)
+
+Requires Screenplay 6.29.0 or later (`screenplay --version`); a collecting query selects ESM v54.
+Both compilers report these codes. The rules are in
+`../../cratis-screenplay-projections/references/graphs.md#collect-nested-rows`.
+
+| Code | Severity | Meaning / fix |
+| --- | --- | --- |
+| `PLAY1144` | E | A `collect` is malformed: not `<property> = collect <root> -[alias:]TYPE-> [alias:]Label` (or `<-[alias:]TYPE-`), not starting at the query's root, without row lines, or a row line that is not `<property> = <alias>.<property>`. |
+| `PLAY1145` | E | A `collect` does not fit the read model: the property is not `Row[]` or `Row optional` of a composite type, or a row assigns an unknown, duplicate or mistyped property or leaves a required one out. |
+| `PLAY1146` | E | A `collect` is nested inside another; collect from the root in a collect of its own. |
+| `PLAY1147` | E | The query does not have the shape of a view: one `match <alias>:<Label>` of the root alone, scalar returns from the root, and no `where` condition on a collected edge. |
+
+## Set once, dictionary keys and children ordering (PLAY0956-PLAY0963)
+
+Requires Screenplay 6.9.0 or later (`screenplay --version`). Rules and fixes: `../../cratis-screenplay-projections/references/dictionaries-and-ordering.md`.
+
+| Code | Severity | Meaning / fix |
+| --- | --- | --- |
+| PLAY0956 | E | `remove <target>` without a dynamic key; end the target in `.$eventContent.<property>`, `.$eventContext.<path>` or `.$causedBy.<member>`, or use `clear` to empty the property. |
+| PLAY0957 | E | `.$eventContent` names no event property, or `.$causedBy` names a member other than `subject`, `name`, `userName`. |
+| PLAY0958 | E | A children ordering line is malformed, has indented lines, or stands outside `children`. |
+| PLAY0959 | E | A `children` block declares more than one ordering line. |
+| PLAY0960 | W | `sort by` names a property the child type does not declare. |
+| PLAY0961 | W | A `.$eventContent` path the handled event does not have. |
+| PLAY0962 | W | A dynamic key writes into a declared read-model property; Screenplay has no dictionary type. |
+| PLAY0963 | E | `clear` with a dynamic key; write `remove`. |
+
+## Development users (PLAY0888-PLAY0889)
+
+Requires Screenplay 5.11.0 or later (`screenplay --version`). See `../../cratis-screenplay-command-surface/references/policy-persona-seed.md#users`.
+
+| Code | Severity | Meaning / fix |
+| --- | --- | --- |
+| `PLAY0888` | E | A `user` plays a persona that no `persona` declaration names. |
+| `PLAY0889` | E | Two `user` declarations carry the same name. |
+
+## Storylines (PLAY0940-PLAY0943)
+
+Requires Screenplay 6.6.0 or later (`screenplay --version`). Authoring metadata; see `../../cratis-screenplay-model-authoring/references/storylines.md`.
+
+| Code | Severity | Meaning / fix |
+| --- | --- | --- |
+| `PLAY0940` | E | A `storyline` declaration is not `storyline <Name> ["<title>"]`. |
+| `PLAY0941` | E | A step is not `<kind> <reference> ["<note>"]`, has an unknown kind, or has a nested line. |
+| `PLAY0942` | W | A step names an element that no declaration of that kind matches; remove it or point it at its replacement. An ambiguous step is `PLAY0198`: qualify it. |
+| `PLAY0943` | E | Two storylines carry the same name. |
+
+## Free screens, shapes and adoptions
+
+Requires Screenplay 6.32.0 or later (`screenplay --version`); earlier compilers reject a top-level `shape` or `screen` with `PLAY0001`. Syntax, severities and fixes: `../../cratis-screenplay-ui-composition/references/free-screens.md`; the design decisions: `../../cratis-screenplay-slice-design/references/screens-before-slices.md`.
+
+| Code | Severity | Meaning / fix |
+| --- | --- | --- |
+| `PLAY1149` | E | A `shape` is malformed, sits anywhere but the top level of a document, or has a field with a key, identifier, subject or generated modifier. Write `shape <Name>` with `<name> <Type>` fields at the top level. |
+| `PLAY1150` | E | A `uses screen`, a provision or a mapping is malformed: `uses screen <Name>` directly in a slice, `data <Need> via query <Query> [by <param>]`, `<field> from <path>`. |
+| `PLAY1151` | E | A `shape` is declared twice; declare it once at the top level. |
+| `PLAY1152` | E | A screen is declared twice in one scope (document, module or feature); rename or remove one. |
+| `PLAY1153` | E | A screen needs one shape twice or two needs share a name; tell them apart with `as <alias>` and provide each by its alias. |
+| `PLAY1154` | E | A slice adopts one screen twice; keep one `uses screen` and put every provision under it. |
+| `PLAY1155` | W | An adopted screen has a need the slice does not provide. Fails any warnings-as-errors gate and executable screen admission; add `data <Need> via query <Query>` under `uses screen`. |
+| `PLAY1156` | E | A provision names a need the screen does not have; the message lists what it needs. |
+| `PLAY1157` | E | A provision names data the screen already sources with its own `data <ReadModel> via query`; remove the provision. |
+| `PLAY1158` | E | One need is provided twice in one adoption. |
+| `PLAY1159` | E | A list query provides a single need, or a single-value query a list need; pick the query of the right cardinality. |
+| `PLAY1160` | E | A field the screen reads, or the shape declares, is not on the providing read model, by name or through `from`; fix the read model or the mapping. |
+| `PLAY1161` | E | A read model property has another type than the explicit shape declares (a concept stands for its primitive); fix the read model, not the shape. |
+| `PLAY1162` | E | A provision's `by` is not a parameter of the query; use a declared parameter. |
+| `PLAY1163` | E | A mapping names a field the screen does not read and the shape does not declare; remove or correct it. |
+| `PLAY1164` | I | A screen no slice adopts is design-only: never fails any gate, and is absent from the executable model and the UI contract. Adopt it with `uses screen` when it must render. |
+
+## Screen visuals and slice placements (PLAY0950-PLAY0955)
+
+Requires Screenplay 6.7.0 or later (`screenplay --version`). Both are presentation-only; neither
+changes the executable model. Details: `../../cratis-screenplay-ui-composition/references/screen-visuals.md`
+and `../../cratis-screenplay-slice-design/references/slicing.md`.
+
+| Code | Severity | Meaning / fix |
+| --- | --- | --- |
+| PLAY0950 | E | A screen `sketch`, `mockup` or `image` line names no file. |
+| PLAY0951 | W | An `image` is not PNG, JPG, GIF, SVG or WebP, or a `mockup` is not an HTML page. |
+| PLAY0952 | W | The file does not exist beside the model, or its path leaves the model root. |
+| PLAY0953 | E | A slice `shows` line is not `shows event <Name>` or `shows readmodel <Name>`. |
+| PLAY0954 | W | A `shows` line names no declared event or read model. |
+| PLAY0955 | W | A slice shows an element it declares itself, or shows the same element twice. |
 
 ## Structural completeness and timeline checks
 
@@ -489,12 +650,12 @@ Requires Stage 4.129.0 for semantic Host/executor protected reads; older engines
 
 ## Binding (V2 and V3) - see `executable-subset.md` for the full table
 
-Requires Screenplay 4.210.0 (`screenplay --version`) for PLAY0800 and its required typed `subject`; older binders attribute attached command handlers to PLAY0268. From Screenplay 4.250.0 an attached handler beside unconditional `produces` with a resolved body binds instead. Other PLAY0268 refusal families are unchanged.
+Requires Screenplay 4.210.0 (`screenplay --version`) for PLAY0800 and its required typed `subject`; older binders attribute attached command handlers to PLAY0268. From Screenplay 4.250.0 an attached handler beside unconditional `produces` with a resolved body binds instead, as does one beside a `may produce` block (ESM v35) with a resolved body; an unresolved body still fails. Other PLAY0268 refusal families are unchanged.
 
 | Code | Meaning | Fix |
 |---|---|---|
 | PLAY0268 | construct not representable in a supported ESM version yet (`executable-subset.md` lists unsupported query shapes, protected enum/identity concepts, read paths without opt-in or in `produces when`, Uuid ordering, different Uuid concepts and Uuid rules, and older bundled-compiler limits) | stay in design mode, or change the construct if the domain allows; never strip `pii`/authorization |
-| PLAY0800 | error `CommandHandlerRequiresAttachment`: a file/inline command handler has no unconditional `produces` result contract or no resolved, nonempty, language-tagged body; required typed `subject` identifies the command | declare unconditional `produces` beside a resolved body, split variable outcomes into separate commands, or gap-fill the slice in code; hosts switch on the code and read `arguments.subject`, never match the message |
+| PLAY0800 | error `CommandHandlerRequiresAttachment`: a file/inline command handler has neither an unconditional `produces` nor a `may produce` block (ESM v35, result contract v2), or no resolved, nonempty, language-tagged body; required typed `subject` identifies the command | declare unconditional `produces` or a `may produce` block beside a resolved body, split variable outcomes into separate commands, or gap-fill the slice in code; hosts switch on the code and read `arguments.subject`, never match the message |
 | PLAY0269 / 0270 | UI deferred / authoring metadata (I) | none |
 | PLAY0271 | legacy `reads` or a `concurrency` block keeps its legacy meaning and cannot bind (error) | opt eligible command reads into v25 with reviewed preamble repair; `concurrency` remains unbound; uniqueness uses a constraint, target realization stays separate |
 | PLAY0273 | incoherent: ambiguous `for`, property not on event revision, operand type mismatch, derived `$eventContext` path, unparsable date literal or offset-less DateTime literal in an admitted v26 comparison, or a Uuid comparison literal that is not lowercase hyphenated (v28) | fix the reference or literal; DateTime needs offset/Z; Uuid literals are lowercase hyphenated |
