@@ -36,18 +36,20 @@ Tool versions are covered in `cratis-screenplay-toolchain` `SKILL.md`; read it b
 ## Language modes that block target delivery
 
 Read [language admission](../cratis-screenplay-toolchain/references/language-admission.md)
-for version selection, and [current Stage boundaries](../cratis-stage-rendering-and-sandbox/references/current-boundaries.md)
+for version selection ([unknown-preserving reads](../cratis-screenplay-toolchain/references/unknown-preserving-reader.md)
+are not render admission; read-model [property order](../cratis-screenplay-toolchain/references/read-model-property-order.md)
+is opt-in 37.1 metadata, not a constructor-order promise), and [current Stage boundaries](../cratis-stage-rendering-and-sandbox/references/current-boundaries.md)
 for realization. Bounded atomic batches, source-event Translate captures/publication and resolved
 C# validation bodies now render. Described handlers still refuse even in Stub
 mode; query-performer gaps are a separate contract, not completed behavior. Protected reads still need an admitted shape. Semantic Host/executor
 support is not generated-app protection.
 Preserve contracts; reference success is not target realization.
 
-A file/inline command handler binds beside unconditional `produces` with a resolved
-body (v23 result contract, Screenplay 4.250.0); without them it refuses PLAY0800 with a
-required typed `arguments.subject`. 4.210.0 to 4.249.x refuse every attached handler
+A file/inline command handler binds beside unconditional `produces` or `may produce` with a resolved
+body (v23: Screenplay 4.250.0; `may produce`: ESM v35); else it refuses PLAY0800 with a
+required typed `arguments.subject`. 4.210.0-4.249.x refuse every attached handler
 with PLAY0800; older binders use PLAY0268. Read [renderability gate](references/renderability-gate.md)
-when classifying a handler or other binding refusal; never parse message text.
+when classifying a handler or binding refusal; never parse message text.
 
 Inline bodies (`csharp`, `typescript`, `react`, `html`, `sql`, `java`) are opaque and reach the target
 unchanged; each target decides which it realizes. The Cratis target refuses `java` bodies: gap-fill
@@ -216,6 +218,7 @@ whole re-render. What to do:
 - Screens reported as `PLAY0269` are information that the backend profile defers them. They are not
   proof of a rendered screen: check the running app (`cratis-screenplay-toolchain` `references/fast-path.md`)
   and list any authored screen that is missing as not rendered.
+- Scope a re-render with `screenplay diff --format json` (`slices`, `modelWide`); other stacks read ESM v42 or `--format ui`: [exports](references/renderability-gate.md#cli-exports-and-diffs).
 
 ## Gate
 

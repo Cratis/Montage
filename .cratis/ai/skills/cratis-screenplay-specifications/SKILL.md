@@ -29,7 +29,7 @@ reference execution. Use `screenplay test` or MCP `run-specifications` for V4; S
 tests are separate evidence. Propose → review → `run-specifications` with `proposalId` → apply.
 PLAY0285 (an impossible `then`) unbinds the whole model and blocks every spec.
 Unsupported/unbound is never a pass. Typed examples and
-route assertions are in [examples and routes](references/examples-and-routes.md).
+routes: [examples](references/examples-and-routes.md); [producerless events](references/producerless-events.md).
 
 Requires Screenplay 4.145.0 or later (`screenplay --version`) for `run-specifications` with `proposalId`.
 
@@ -99,21 +99,18 @@ or target tests; name engine, version and expected/discovered selection.
   UnsupportedValidation, not a successful check. Read
   [text and match rules](../cratis-screenplay-command-surface/references/text-and-match-rules.md)
   for boundary values and PLAY0699/0787. Reference success is not Stage admission.
+- Opaque rule, validation and reducer bodies run only when a host supplies a body execution
+  provider; the standalone tool never does. Read
+  [host body execution](references/host-body-execution.md).
 
 ## Chronological command date comparisons
 
 Requires Screenplay 4.199.0 (ESM v26; `screenplay --version`); older binders refuse
-these comparisons with PLAY0268. DateTime conditions compare UTC instants at tick
-precision: cover equal instants with different offsets, increasing endpoints,
-an inverted interval and a one-tick boundary. Every participating DateTime input
-without an offset or `Z` rejects with Validation before rules, even when its
-comparison is skipped; add a missing-offset rejection, not a clock fixture workaround.
-`then` matching stays ordinal: expected event values keep the exact produced text,
-not an equivalent offset. Read the complete [retention-window specifications](../cratis-screenplay-command-surface/references/date-comparisons.md)
-for `require to >= from`, PLAY0268/0273 and Stage's v26 refusal. The missing-offset
-runtime case needs an evaluator-request or target input test: putting the invalid
-value in a typed `.play` fixture instead fails binding with PLAY0273; `then error`
-does not exercise runtime validation.
+these comparisons with PLAY0268.
+
+DateTime conditions compare UTC instants at tick precision, and an input without an
+offset rejects with Validation before rules. Read [date comparisons](references/date-comparisons.md)
+for the cases to cover, ordinal `then` matching and the runtime-validation test.
 
 ## Descriptions, persona callers and case tables
 
@@ -141,7 +138,7 @@ Rules the binder enforces:
 - **`then result` and `then no result` need `when query`**, and `when query`
   needs one of them, `then denied` or a sole validation `then error` (`PLAY0465`). Each argument is a `by` or
   `filter` parameter of the query (`PLAY0468`).
-- **A clock instant is ISO 8601 with an offset or `Z`** (PLAY0461); one `given clock` maximum. `given time zone` is not runnable: read `references/vocabulary.md`.
+- **A clock instant is ISO 8601 with an offset or `Z`** (PLAY0461); one `given clock` maximum. `given time zone` is admitted from ESM v37: read `references/vocabulary.md`.
 - **`then` contains either events or an error — never both.** A rejection
   specification has exactly one rejection and no success outcome.
 - **`then denied` stands alone**: not with events, errors or state assertions
@@ -195,7 +192,9 @@ Read [references/actions-beyond-commands.md](references/actions-beyond-commands.
 From ESM v6 every action sets reactions off. A specification runs only the slice that declares it: only that slice's reactions, captures and publications run, and `then` events compare the new facts of that slice. A specification whose action is a command goes in the slice that declares the command and states the command's own events. Another slice's event is `PLAY0285` (unreachable): state it in the slice that produces it. An automation states a command it invokes in another slice with `then invokes <Command>` (ESM v34).
 Read [references/reactions-and-cascades.md](references/reactions-and-cascades.md) when a specification's expected events include what a reaction appends, when a cascade, clock tick or invoked command is involved, or when a compiler reports `PLAY0285` (it holds the "Version skew and `PLAY0285`" section).
 
-A `statemachine` or `workflow` (ESM v36) carries its own specifications with `then is`, `then sends`, `then starts`, `outcome`, `then completes`, `then fails at` and `then waits at`. Read automations-and-translations [state machines and workflows](../cratis-screenplay-automations-and-translations/references/statemachines-and-workflows.md) when specifying either.
+Ability answers (`given <System>.<Ability> returns|answers|fails`): [references/ability-answers.md](references/ability-answers.md).
+
+A `statemachine` or `workflow` (ESM v36) carries its own specifications with `then is`, `then invokes`, `then starts`, `outcome`, `then completes`, `then fails at` and `then waits at`. Read automations-and-translations [state machines and workflows](../cratis-screenplay-automations-and-translations/references/statemachines-and-workflows.md) when specifying either.
 
 ## Published-event specifications (released ESM v9)
 
