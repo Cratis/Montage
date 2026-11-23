@@ -17,7 +17,7 @@ namespace Montage.Jobs;
 /// entirely in <c>Cratis.Choreography.Jobs</c>. Montage has a single event store and a single namespace,
 /// so the accessor is the one place that names the <c>Scope</c> (the Chronicle event store) a job's
 /// steps append their events into - the same mapping
-/// <see cref="Cratis.Chronicle.IChronicleClient.GetEventStore"/> targets from inside a step.
+/// <see cref="Cratis.Chronicle.IChronicleClient.GetEventStore(Cratis.Chronicle.EventStoreName, Cratis.Chronicle.EventStoreNamespaceName)"/> targets from inside a step.
 /// </remarks>
 public interface IJobsManagerAccessor
 {
