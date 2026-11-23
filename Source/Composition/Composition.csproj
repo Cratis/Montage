@@ -16,6 +16,7 @@
 
     <ItemGroup>
         <PackageReference Include="Aspire.Hosting.AppHost" />
+        <PackageReference Include="Aspire.Hosting.Dotnet" />
         <PackageReference Include="Aspire.Hosting.JavaScript" />
         <PackageReference Include="Cratis.Chronicle.Aspire" />
     </ItemGroup>

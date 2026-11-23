@@ -31,7 +31,7 @@ builder.CreateResourceBuilder(mongodbServer).WithVolume("montage-mongodb-data", 
 // with a fixed host port; an Aspire HTTP endpoint would proxy at the HTTP layer and reset the TLS
 // handshake.
 var chronicle = builder
-    .AddContainer("chronicle", "cratis/chronicle", "19.153.2-development-slim")
+    .AddContainer("chronicle", "cratis/chronicle", "19.183.2-development-slim")
     .WithEndpoint(port: 35000, targetPort: 35000, name: "grpc")
     .WithEnvironment("Cratis__Chronicle__Storage__Type", "MongoDB")
     .WithEnvironment(context => context.EnvironmentVariables["Cratis__Chronicle__Storage__ConnectionDetails"] = mongodb.Resource.ConnectionStringExpression)
@@ -94,7 +94,7 @@ var frontend = builder
 // the README; point them at real services with appsettings.local.json or user secrets - the app
 // reads them through the same Cratis:Montage options it always has.
 builder
-    .AddProject<Projects.Montage>("montage")
+    .AddDotnetProject("montage", "../Montage/Montage.csproj")
     .WithEndpoint("http", endpoint => endpoint.Port = 5000)
     .WithEnvironment("Cratis__Chronicle__ConnectionString", "chronicle://localhost:35000")
     .WithEnvironment("Cratis__MongoDB__Server", mongodb.Resource.ConnectionStringExpression)
